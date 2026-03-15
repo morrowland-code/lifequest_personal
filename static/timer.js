@@ -1,8 +1,10 @@
 let timerInterval = null;
 let remainingSeconds = 25 * 60;
 let activeMinutes = 25;
+
 let selectedQuestId = null;
 let selectedQuestTitle = "";
+
 
 function updateDisplay(label = "") {
   const display = document.getElementById("timer-display");
@@ -10,14 +12,19 @@ function updateDisplay(label = "") {
 
   const min = Math.floor(remainingSeconds / 60);
   const sec = remainingSeconds % 60;
-  const timeText = `${min}:${sec.toString().padStart(2, "0")}`;
 
+  const timeText = `${min}:${sec.toString().padStart(2, "0")}`;
   display.innerText = label ? `${timeText} ${label}` : timeText;
 }
 
+
 function updateSelectedQuestUI() {
   const questBox = document.getElementById("selected-quest");
-  if (!questBox) return;
+
+  if (!questBox) {
+    console.log("selected-quest box not found");
+    return;
+  }
 
   if (selectedQuestTitle) {
     questBox.innerText = `Focused Quest: ${selectedQuestTitle}`;
@@ -26,6 +33,7 @@ function updateSelectedQuestUI() {
   }
 }
 
+
 function clearCurrentTimer() {
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -33,27 +41,36 @@ function clearCurrentTimer() {
   }
 }
 
+
 function selectQuest(questId, questTitle) {
   selectedQuestId = questId;
   selectedQuestTitle = questTitle || "";
+
+  console.log("Selected quest:", questTitle);
+
   updateSelectedQuestUI();
 }
+
 
 function startTimer(minutes) {
   clearCurrentTimer();
 
   activeMinutes = minutes;
   remainingSeconds = minutes * 60;
+
   updateDisplay("✨");
 
   timerInterval = setInterval(function () {
+
     remainingSeconds--;
 
     if (remainingSeconds <= 0) {
+
       clearCurrentTimer();
       remainingSeconds = 0;
 
       const display = document.getElementById("timer-display");
+
       if (display) {
         display.innerText = "DONE! ✨";
       }
@@ -68,13 +85,16 @@ function startTimer(minutes) {
     }
 
     updateDisplay("✨");
+
   }, 1000);
 }
+
 
 function pauseTimer() {
   clearCurrentTimer();
   updateDisplay("⏸");
 }
+
 
 function resetTimer() {
   clearCurrentTimer();
@@ -82,7 +102,12 @@ function resetTimer() {
   updateDisplay();
 }
 
+
 document.addEventListener("DOMContentLoaded", function () {
+
+  console.log("Timer loaded");
+
   updateDisplay();
   updateSelectedQuestUI();
+
 });
