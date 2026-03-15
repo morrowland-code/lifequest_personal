@@ -103,8 +103,10 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         quest_id INTEGER NOT NULL,
         text TEXT NOT NULL,
+        completed INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (quest_id) REFERENCES quests(id)
     );
+
 
     CREATE TABLE IF NOT EXISTS idea_vault (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -438,6 +440,16 @@ def dashboard():
     character, current_outfit, owned_outfits = get_character_data()
 
     return render_template(
+    strategies = db.execute(
+        """
+        SELECT s.*, q.title AS quest_title
+        FROM strategies s
+        JOIN quests q ON q.id = s.quest_id
+        WHERE q.status = 'todo'
+        ORDER BY s.id
+        """
+    ).fetchall()
+    
         "dashboard.html",
         profile=TRAIT_PROFILE,
         settings=settings,
@@ -452,7 +464,9 @@ def dashboard():
         character=character,
         current_outfit=current_outfit,
         owned_outfits=owned_outfits,
-    )
+        strategies=strategies,
+        )
+
 
 
 @app.post("/energy")
@@ -596,6 +610,42 @@ def complete_quest(quest_id):
 
 @app.post("/quests/<int:quest_id>/delete")
 def delete_quest(quest_id):
+@app.post("/strategies/<int:strategy_id>/complete")
+def complete_strategy(strategy_id):
+
+    db = get_db()
+
+    strategy = db.execute(
+        "SELECT * FROM strategies WHERE id = ?", (strategy_id,)
+    ).fetchone()
+
+    if not strategy:
+        flash("Strategy not found.")
+        return redirect(url_for("dashboard"))
+
+    if strategy["completed"]:
+        flash("Strategy already completed.")
+        return redirect(url_for("dashboard"))
+
+    db.execute(
+        "UPDATE strategies SET completed = 1 WHERE id = ?", (strategy_id,)
+    )
+    db.commit()
+
+    leveled, level, unlocked_outfits = add_xp(10)
+
+    message = "Strategy completed! +10 XP."
+
+    if leveled:
+        message += f" You leveled up to Level {level}!"
+
+    if unlocked_outfits:
+        message += " New outfit unlocked: " + ", ".join(unlocked_outfits)
+
+    flash(message)
+
+    return redirect(url_for("dashboard"))
+
     db = get_db()
     quest = db.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
 
