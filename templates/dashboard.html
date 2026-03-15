@@ -314,7 +314,14 @@
 
       <div style="margin-top:14px;">
         {% for idea in ideas %}
-          <div class="quest">{{ idea.text }}</div>
+          <div class="quest">
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+              <span>{{ idea.text }}</span>
+              <form action="{{ url_for('delete_idea', idea_id=idea.id) }}" method="post">
+                <button type="submit" class="btn-danger">Delete</button>
+              </form>
+            </div>
+          </div>
         {% else %}
           <div class="muted">No ideas saved yet.</div>
         {% endfor %}
@@ -325,7 +332,12 @@
       <h2>Completed Quests</h2>
       {% for quest in completed_quests %}
         <div class="quest">
-          <strong>{{ quest.title }}</strong>
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+            <strong>{{ quest.title }}</strong>
+            <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
+              <button type="submit" class="btn-danger">Delete</button>
+            </form>
+          </div>
           <div class="muted">
             {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
           </div>
@@ -342,7 +354,12 @@
       <h2>All Active Quests</h2>
       {% for quest in active_quests %}
         <div class="quest">
-          <strong>{{ quest.title }}</strong>
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+            <strong>{{ quest.title }}</strong>
+            <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
+              <button type="submit" class="btn-danger">Delete</button>
+            </form>
+          </div>
           <div class="muted">
             {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
           </div>
