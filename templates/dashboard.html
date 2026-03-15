@@ -66,18 +66,47 @@
               {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }}
             </div>
 
+            {% for strategy in strategies if strategy.quest_id == quest.id %}
+              <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                  <span>
+                    {% if strategy.completed %}
+                      ✔ {{ strategy.text }}
+                    {% else %}
+                      ☐ {{ strategy.text }}
+                    {% endif %}
+                  </span>
+
+                  {% if not strategy.completed %}
+                    <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
+                      <button type="submit" class="btn-secondary">+10 XP</button>
+                    </form>
+                  {% else %}
+                    <span class="pill">Done</span>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+
+            {% if quest.notes %}
+              <div style="margin-top:8px;">{{ quest.notes }}</div>
+            {% endif %}
+
             <div class="actions-inline">
               <button
                 type="button"
-                class="btn-secondary focus-btn"
-                data-id="{{ quest.id }}"
-                data-title="{{ quest.title }}"
+                class="btn-secondary"
+                onclick="selectQuest('{{ quest.id }}', {{ quest.title|tojson }})"
               >
                 Focus Now
               </button>
 
               <form action="{{ url_for('remove_quest_from_today', quest_id=quest.id) }}" method="post">
                 <button type="submit" class="btn-secondary">Remove from Today</button>
+              </form>
+
+              <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
+                <button type="submit">Complete Quest</button>
               </form>
             </div>
           </div>
@@ -168,6 +197,8 @@
                       <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
                         <button type="submit" class="btn-secondary">+10 XP</button>
                       </form>
+                    {% else %}
+                      <span class="pill">Done</span>
                     {% endif %}
                   </div>
                 </div>
@@ -180,9 +211,8 @@
               <div class="actions-inline">
                 <button
                   type="button"
-                  class="btn-secondary focus-btn"
-                  data-id="{{ quest.id }}"
-                  data-title="{{ quest.title }}"
+                  class="btn-secondary"
+                  onclick="selectQuest('{{ quest.id }}', {{ quest.title|tojson }})"
                 >
                   Focus This Quest
                 </button>
@@ -435,21 +465,88 @@
       <h2>All Active Quests</h2>
       {% for quest in active_quests %}
         <div class="quest">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-            <strong>{{ quest.title }}</strong>
-            <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
-              <button type="submit" class="btn-danger">Delete</button>
-            </form>
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap;">
+            <div>
+              <strong>{{ quest.title }}</strong>
+              <div class="muted" style="margin-top:4px;">
+                {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
+                {% if quest.is_today %}
+                  · In Today Focus ✨
+                {% endif %}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="btn-secondary"
+              onclick="toggleQuestPanel('quest-panel-{{ quest.id }}', this)"
+            >
+              Show Strategies
+            </button>
           </div>
-          <div class="muted">
-            {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
-            {% if quest.is_today %}
-              · In Today Focus ✨
+
+          <div id="quest-panel-{{ quest.id }}" style="display:none; margin-top:12px;">
+            {% if quest.notes %}
+              <div style="margin-top:8px;">{{ quest.notes }}</div>
             {% endif %}
+
+            {% set quest_strategies = strategies | selectattr('quest_id', 'equalto', quest.id) | list %}
+            {% if quest_strategies %}
+              <div style="margin-top:10px;" class="muted">Strategies:</div>
+
+              {% for strategy in quest_strategies %}
+                <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                    <span>
+                      {% if strategy.completed %}
+                        ✔ {{ strategy.text }}
+                      {% else %}
+                        ☐ {{ strategy.text }}
+                      {% endif %}
+                    </span>
+
+                    {% if not strategy.completed %}
+                      <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
+                        <button type="submit" class="btn-secondary">+10 XP</button>
+                      </form>
+                    {% else %}
+                      <span class="pill">Done</span>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="muted" style="margin-top:10px;">No strategies added yet.</div>
+            {% endif %}
+
+            <div class="actions-inline" style="margin-top:12px;">
+              <button
+                type="button"
+                class="btn-secondary"
+                onclick="selectQuest('{{ quest.id }}', {{ quest.title|tojson }})"
+              >
+                Focus This Quest
+              </button>
+
+              {% if quest.is_today %}
+                <form action="{{ url_for('remove_quest_from_today', quest_id=quest.id) }}" method="post">
+                  <button type="submit" class="btn-secondary">Remove from Today</button>
+                </form>
+              {% else %}
+                <form action="{{ url_for('add_quest_to_today', quest_id=quest.id) }}" method="post">
+                  <button type="submit" class="btn-secondary">Add to Today</button>
+                </form>
+              {% endif %}
+
+              <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
+                <button type="submit">Complete Quest</button>
+              </form>
+
+              <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
+                <button type="submit" class="btn-danger">Delete</button>
+              </form>
+            </div>
           </div>
-          {% if quest.notes %}
-            <div style="margin-top:6px;">{{ quest.notes }}</div>
-          {% endif %}
         </div>
       {% else %}
         <div class="muted">No active quests yet.</div>
@@ -458,23 +555,20 @@
   </div>
 </div>
 
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-  const buttons = document.querySelectorAll(".focus-btn");
-
-  buttons.forEach(btn => {
-    btn.addEventListener("click", function () {
-      const questId = this.dataset.id;
-      const questTitle = this.dataset.title;
-
-      if (typeof selectQuest === "function") {
-        selectQuest(questId, questTitle);
-      }
-    });
-  });
-});
-</script>
-
 <script src="{{ url_for('static', filename='timer.js') }}"></script>
 
+<script>
+function toggleQuestPanel(panelId, button) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+
+  if (panel.style.display === "none" || panel.style.display === "") {
+    panel.style.display = "block";
+    if (button) button.innerText = "Hide Strategies";
+  } else {
+    panel.style.display = "none";
+    if (button) button.innerText = "Show Strategies";
+  }
+}
+</script>
 {% endblock %}
