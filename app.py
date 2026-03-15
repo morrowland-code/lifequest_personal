@@ -628,6 +628,24 @@ def add_idea():
     flash("Idea added to the vault.")
     return redirect(url_for("dashboard"))
 
+@app.post("/ideas/<int:idea_id>/delete")
+def delete_idea(idea_id):
+    db = get_db()
+
+    idea = db.execute(
+        "SELECT * FROM idea_vault WHERE id = ?", (idea_id,)
+    ).fetchone()
+
+    if not idea:
+        flash("Idea not found.")
+        return redirect(url_for("dashboard"))
+
+    db.execute("DELETE FROM idea_vault WHERE id = ?", (idea_id,))
+    db.commit()
+
+    flash("Idea deleted.")
+    return redirect(url_for("dashboard"))
+
 
 @app.post("/health")
 def update_health():
