@@ -96,6 +96,7 @@ def init_db():
         xp_reward INTEGER NOT NULL DEFAULT 25,
         created_at TEXT NOT NULL,
         completed_at TEXT,
+        is_today INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
     );
 
@@ -421,7 +422,8 @@ def dashboard():
 
     active_quests = db.execute(
         """
-        SELECT q.*, c.name AS campaign_name
+        SELECT q.*, c.name AS campaign_name,
+               (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
         FROM quests q
         LEFT JOIN campaigns c ON c.id = q.campaign_id
         WHERE q.status = 'todo'
@@ -431,7 +433,8 @@ def dashboard():
 
     today_quests = db.execute(
         """
-        SELECT q.*, c.name AS campaign_name
+        SELECT q.*, c.name AS campaign_name,
+               (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
         FROM quests q
         LEFT JOIN campaigns c ON c.id = q.campaign_id
         WHERE q.status = 'todo' AND q.is_today = 1
@@ -456,7 +459,7 @@ def dashboard():
         FROM strategies s
         JOIN quests q ON q.id = s.quest_id
         WHERE q.status = 'todo'
-        ORDER BY s.id
+        ORDER BY q.id ASC, s.id ASC
         """
     ).fetchall()
 
@@ -666,7 +669,8 @@ def delete_quest(quest_id):
     db = get_db()
 
     quest = db.execute(
-        "SELECT * FROM quests WHERE id = ?", (quest_id,)
+        "SELECT * FROM quests WHERE id = ?",
+        (quest_id,),
     ).fetchone()
 
     if not quest:
@@ -686,7 +690,13 @@ def complete_strategy(strategy_id):
     db = get_db()
 
     strategy = db.execute(
-        "SELECT * FROM strategies WHERE id = ?", (strategy_id,)
+        """
+        SELECT s.*, q.title AS quest_title
+        FROM strategies s
+        JOIN quests q ON q.id = s.quest_id
+        WHERE s.id = ?
+        """,
+        (strategy_id,),
     ).fetchone()
 
     if not strategy:
@@ -705,7 +715,7 @@ def complete_strategy(strategy_id):
 
     leveled, level, unlocked_outfits = add_xp(10)
 
-    message = "Strategy completed! +10 XP."
+    message = f"Strategy completed for {strategy['quest_title']}! +10 XP."
     if leveled:
         message += f" You leveled up to Level {level}!"
     if unlocked_outfits:
@@ -738,7 +748,8 @@ def delete_idea(idea_id):
     db = get_db()
 
     idea = db.execute(
-        "SELECT * FROM idea_vault WHERE id = ?", (idea_id,)
+        "SELECT * FROM idea_vault WHERE id = ?",
+        (idea_id,),
     ).fetchone()
 
     if not idea:
