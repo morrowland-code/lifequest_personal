@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid grid-2">
+  <div class="grid">
+    <div class="card soft">
+      <div class="section-title">
+        <div>
+          <h1>LifeQuest Personal</h1>
+          <div class="muted">Planner + motivation game loop.</div>
+        </div>
+        <div class="xp">
+          Level {{ settings.level }}<br>
+          {{ settings.current_xp }} / {{ settings.level * 100 }} XP
+          <div style="margin-top:8px; width:220px; max-width:100%;">
+            <div style="height:14px; background:#ffd8ee; border:2px solid #f5b2d5; border-radius:999px; overflow:hidden;">
+              <div style="height:100%; width:{% if settings.level * 100 > 0 %}{{ (settings.current_xp / (settings.level * 100) * 100)|round(1) }}{% else %}0{% endif %}%; background:linear-gradient(90deg, #ff5fb2, #ff93c9);"></div>
+            </div>
+          </div>
+          <div class="muted" style="margin-top:6px;">Total XP: {{ settings.total_xp }}</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <span class="pill">🔥 Daily Streak: {{ settings.daily_streak }} day{% if settings.daily_streak != 1 %}s{% endif %}</span>
+        {% if settings.last_activity_date %}
+          <span class="pill">Last Activity: {{ settings.last_activity_date }}</span>
+        {% endif %}
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <span class="pill">Archetype: {{ profile.archetype }}</span>
+        <span class="pill">Openness: {{ profile.openness }}</span>
+        <span class="pill">Conscientiousness: {{ profile.conscientiousness }}</span>
+        <span class="pill">Extraversion: {{ profile.extraversion }}</span>
+        <span class="pill">Agreeableness: {{ profile.agreeableness }}</span>
+        <span class="pill">Neuroticism: {{ profile.neuroticism }}</span>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div class="quest" style="margin-bottom:0;">
+          <strong>Protein</strong>
+          <div class="muted" style="margin-top:6px;">{{ daily_log.protein_value }} / {{ daily_log.protein_goal }}</div>
+        </div>
+        <div class="quest" style="margin-bottom:0;">
+          <strong>Water</strong>
+          <div class="muted" style="margin-top:6px;">{{ daily_log.water_value }} / {{ daily_log.water_goal }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>Focus Timer</h2>
+        <span class="pill">Mission Mode</span>
+      </div>
+
+      <div id="selected-quest" class="quest" style="background:#fff7fc; margin-bottom:12px;">
+        Focused Quest: none selected
+      </div>
+
+      <div id="timer-display" style="font-size:42px; font-weight:800; text-align:center; margin:8px 0 14px; background:#fff7fc; border:2px dashed #f5b2d5; border-radius:18px; padding:18px;">
+        25:00
+      </div>
+
+      <div class="row">
+        <button type="button" onclick="startTimer(25)">Start 25 Min Focus</button>
+        <button type="button" class="btn-secondary" onclick="startTimer(50)">Start 50 Min Deep Work</button>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button type="button" onclick="pauseTimer()">Pause</button>
+        <button type="button" class="btn-secondary" onclick="resetTimer()">Reset</button>
+      </div>
+
+      <div class="muted" style="margin-top:10px;">
+        Pick a quest below, then start a timer for that mission.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>Daily Quest Board</h2>
+        <span class="pill">Energy: {{ settings.energy_mode }}</span>
+      </div>
+
+      <form action="{{ url_for('set_energy') }}" method="post" class="row" style="margin-bottom:14px;">
+        <div>
+          <label>Energy Mode</label>
+          <select name="energy_mode">
+            {% for mode in energy_presets.keys() %}
+              <option value="{{ mode }}" {% if mode == settings.energy_mode %}selected{% endif %}>{{ mode|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:flex;align-items:end;">
+          <button type="submit">Update</button>
+        </div>
+      </form>
+
+      {% for category, quests in quest_board.items() %}
+        <h3 style="margin-top:10px;">{{ category|capitalize }} Quest{% if quests|length != 1 %}s{% endif %}</h3>
+        {% if quests %}
+          {% for quest in quests %}
+            <div class="quest">
+              <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+                <strong>{{ quest.title }}</strong>
+                <span class="pill">{{ quest.xp_reward }} XP</span>
+              </div>
+              <div class="muted" style="margin-top:6px;">
+                {{ quest.campaign_name or 'No campaign' }} · {{ quest.strategy_count }} strategies
+              </div>
+              {% if quest.notes %}
+                <div style="margin-top:8px;">{{ quest.notes }}</div>
+              {% endif %}
+
+              <div class="actions-inline">
+                <button type="button" class="btn-secondary" onclick="selectQuest({{ quest.id }}, {{ quest.title|tojson }})">
+                  Focus This Quest
+                </button>
+                <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
+                  <button type="submit">Complete Quest</button>
+                </form>
+                <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
+                  <button type="submit" class="btn-danger">Delete</button>
+                </form>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="muted">No {{ category }} quests showing in this energy mode.</div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>Add Quest</h2>
+      <form action="{{ url_for('add_quest') }}" method="post" class="grid">
+        <div>
+          <label>Quest title</label>
+          <input name="title" placeholder="Study derivatives for 25 minutes">
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Campaign</label>
+            <select name="campaign_id">
+              <option value="">No campaign</option>
+              {% for campaign in campaigns %}
+                <option value="{{ campaign.id }}">{{ campaign.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label>Category</label>
+            <select name="category">
+              <option value="main">Main</option>
+              <option value="side">Side</option>
+              <option value="stability">Stability</option>
+              <option value="reflection">Reflection</option>
+              <option value="tiny">Tiny</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>XP reward</label>
+            <input name="xp_reward" type="number" value="25">
+          </div>
+          <div>
+            <label>Notes</label>
+            <input name="notes" placeholder="One clear next step only">
+          </div>
+        </div>
+
+        <div>
+          <label>Strategies (one per line, each gives 10 XP)</label>
+          <textarea name="strategies" placeholder="Watch one short lecture&#10;Solve 3 problems&#10;Explain it out loud"></textarea>
+        </div>
+
+        <button type="submit">Add Quest</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="section-title">
+        <h2>Character Closet</h2>
+        <span class="pill">Unlocks</span>
+      </div>
+
+      <div class="quest" style="background:#fff7fc;">
+        <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+          <strong>{{ character.character_name }}</strong>
+          {% if current_outfit %}
+            <span class="pill">{{ current_outfit.rarity|capitalize }}</span>
+          {% endif %}
+        </div>
+        <div class="muted" style="margin-top:8px;">
+          Current outfit:
+          {% if current_outfit %}
+            {{ current_outfit.name }}
+          {% else %}
+            None equipped yet
+          {% endif %}
+        </div>
+      </div>
+
+      {% for outfit in owned_outfits %}
+        <div class="quest">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+            <strong>{{ outfit.name }}</strong>
+            <span class="pill">{{ outfit.rarity|capitalize }}</span>
+          </div>
+
+          <div class="muted" style="margin-top:6px;">
+            Slot: {{ outfit.slot }} · Unlock level: {{ outfit.unlock_level }}
+          </div>
+
+          {% if current_outfit and outfit.id == current_outfit.id %}
+            <div class="muted" style="margin-top:8px;">Currently equipped ✨</div>
+          {% else %}
+            <form action="{{ url_for('equip_outfit', outfit_id=outfit.id) }}" method="post" style="margin-top:10px;">
+              <button type="submit">Equip Outfit</button>
+            </form>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="muted">No outfits unlocked yet.</div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>Campaign Progress</h2>
+        <span class="pill">Quest Paths</span>
+      </div>
+
+      {% for campaign in campaign_progress %}
+        <div class="quest">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+            <strong>{{ campaign.name }}</strong>
+            <span class="pill">{{ campaign.completed_quests }}/{{ campaign.total_quests }} done</span>
+          </div>
+
+          <div style="margin-top:10px;">
+            <div style="height:14px; background:#ffd8ee; border:2px solid #f5b2d5; border-radius:999px; overflow:hidden;">
+              <div style="height:100%; width:{{ campaign.percent }}%; background:linear-gradient(90deg, #ff5fb2, #ff93c9);"></div>
+            </div>
+          </div>
+
+          <div class="muted" style="margin-top:8px;">{{ campaign.percent }}% complete</div>
+        </div>
+      {% else %}
+        <div class="muted">No campaigns found yet.</div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>Health + Reflection</h2>
+      <form action="{{ url_for('update_health') }}" method="post" class="grid">
+        <div class="row">
+          <div>
+            <label>Protein</label>
+            <input name="protein_value" type="number" value="{{ daily_log.protein_value }}">
+          </div>
+          <div>
+            <label>Protein goal</label>
+            <input name="protein_goal" type="number" value="{{ daily_log.protein_goal }}">
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Water</label>
+            <input name="water_value" type="number" value="{{ daily_log.water_value }}">
+          </div>
+          <div>
+            <label>Water goal</label>
+            <input name="water_goal" type="number" value="{{ daily_log.water_goal }}">
+          </div>
+        </div>
+
+        <div>
+          <label>
+            <input type="checkbox" name="workout_done" {% if daily_log.workout_done %}checked{% endif %} style="width:auto;">
+            Workout done
+          </label>
+        </div>
+
+        <div>
+          <label>Reflection</label>
+          <textarea name="reflection_text" placeholder="What emotion showed up today? What small action moves you forward?">{{ daily_log.reflection_text }}</textarea>
+        </div>
+
+        <button type="submit">Save Health + Reflection</button>
+      </form>
+
+      <form action="{{ url_for('reset_day') }}" method="post" style="margin-top:10px;">
+        <button type="submit" class="btn-secondary">Reset Daily Fields</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Idea Vault</h2>
+      <form action="{{ url_for('add_idea') }}" method="post" class="grid">
+        <div>
+          <label>Chaotic thought dump</label>
+          <textarea name="text" placeholder="Build website automation for TikTok math videos"></textarea>
+        </div>
+        <button type="submit">Save Idea</button>
+      </form>
+
+      <div style="margin-top:14px;">
+        {% for idea in ideas %}
+          <div class="quest">{{ idea.text }}</div>
+        {% else %}
+          <div class="muted">No ideas saved yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Completed Quests</h2>
+      {% for quest in completed_quests %}
+        <div class="quest">
+          <strong>{{ quest.title }}</strong>
+          <div class="muted">
+            {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
+          </div>
+          {% if quest.notes %}
+            <div style="margin-top:6px;">{{ quest.notes }}</div>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="muted">No completed quests yet.</div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>All Active Quests</h2>
+      {% for quest in active_quests %}
+        <div class="quest">
+          <strong>{{ quest.title }}</strong>
+          <div class="muted">
+            {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
+          </div>
+          {% if quest.notes %}
+            <div style="margin-top:6px;">{{ quest.notes }}</div>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="muted">No active quests yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='timer.js') }}"></script>
+{% endblock %}

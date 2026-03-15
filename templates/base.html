@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LifeQuest Personal</title>
+  <style>
+    :root {
+      --bg: #fff3fb;
+      --card: #ffffff;
+      --card2: #ffe3f4;
+      --text: #5d255d;
+      --pink: #ff5fb2;
+      --pink2: #ff93c9;
+      --border: #f5b2d5;
+      --shadow: rgba(255,95,178,.14);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #fff7fd, #ffeef9);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 10px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2 {
+      grid-template-columns: 1.1fr .9fr;
+    }
+
+    .card {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 22px;
+      padding: 16px;
+      box-shadow: 0 10px 24px var(--shadow);
+    }
+
+    .soft {
+      background: var(--card2);
+    }
+
+    .pill {
+      display: inline-block;
+      background: #ffd3ea;
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 999px;
+      margin: 3px 6px 3px 0;
+      font-size: 14px;
+    }
+
+    .quest {
+      border: 2px dashed var(--border);
+      border-radius: 18px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #fffafd;
+    }
+
+    button {
+      background: var(--pink);
+      color: white;
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .btn-secondary {
+      background: var(--pink2);
+    }
+
+    .btn-danger {
+      background: #ff6b8a;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: white;
+      color: var(--text);
+    }
+
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+
+    .row {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .muted {
+      color: #8a5e88;
+      font-size: 14px;
+    }
+
+    .flash {
+      padding: 12px 14px;
+      background: #fff0f9;
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 12px;
+    }
+
+    .xp {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--pink);
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .actions-inline {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .actions-inline form {
+      margin: 0;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2, .row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
