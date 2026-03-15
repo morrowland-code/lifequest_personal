@@ -7,6 +7,7 @@ let selectedQuestTitle = "";
 
 
 function updateDisplay(label = "") {
+
   const display = document.getElementById("timer-display");
   if (!display) return;
 
@@ -14,11 +15,13 @@ function updateDisplay(label = "") {
   const sec = remainingSeconds % 60;
 
   const timeText = `${min}:${sec.toString().padStart(2, "0")}`;
+
   display.innerText = label ? `${timeText} ${label}` : timeText;
 }
 
 
 function updateSelectedQuestUI() {
+
   const questBox = document.getElementById("selected-quest");
 
   if (!questBox) {
@@ -31,28 +34,34 @@ function updateSelectedQuestUI() {
   } else {
     questBox.innerText = "Focused Quest: none selected";
   }
+
 }
 
 
 function clearCurrentTimer() {
+
   if (timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
   }
+
 }
 
 
 function selectQuest(questId, questTitle) {
+
   selectedQuestId = questId;
   selectedQuestTitle = questTitle || "";
 
   console.log("Selected quest:", questTitle);
 
   updateSelectedQuestUI();
+
 }
 
 
 function startTimer(minutes) {
+
   clearCurrentTimer();
 
   activeMinutes = minutes;
@@ -87,19 +96,24 @@ function startTimer(minutes) {
     updateDisplay("✨");
 
   }, 1000);
+
 }
 
 
 function pauseTimer() {
+
   clearCurrentTimer();
   updateDisplay("⏸");
+
 }
 
 
 function resetTimer() {
+
   clearCurrentTimer();
   remainingSeconds = activeMinutes * 60;
   updateDisplay();
+
 }
 
 
@@ -109,5 +123,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
   updateDisplay();
   updateSelectedQuestUI();
+
+  const focusButtons = document.querySelectorAll(".focus-btn");
+
+  focusButtons.forEach(button => {
+
+    button.addEventListener("click", function() {
+
+      const questId = this.dataset.id;
+      const questTitle = this.dataset.title;
+
+      selectQuest(questId, questTitle);
+
+    });
+
+  });
 
 });
