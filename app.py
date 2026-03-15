@@ -389,6 +389,7 @@ def get_campaign_progress():
 @app.route("/")
 def dashboard():
     db = get_db()
+
     settings = db.execute("SELECT * FROM profile_settings WHERE id = 1").fetchone()
     daily_log = db.execute("SELECT * FROM daily_log WHERE id = 1").fetchone()
 
@@ -413,8 +414,7 @@ def dashboard():
 
     active_quests = db.execute(
         """
-        SELECT q.*, c.name AS campaign_name,
-               (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
+        SELECT q.*, c.name AS campaign_name
         FROM quests q
         LEFT JOIN campaigns c ON c.id = q.campaign_id
         WHERE q.status = 'todo'
@@ -424,22 +424,15 @@ def dashboard():
 
     completed_quests = db.execute(
         """
-        SELECT q.*, c.name AS campaign_name,
-               (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
+        SELECT q.*, c.name AS campaign_name
         FROM quests q
         LEFT JOIN campaigns c ON c.id = q.campaign_id
         WHERE q.status = 'done'
-        ORDER BY q.completed_at DESC, q.id DESC
+        ORDER BY q.completed_at DESC
         LIMIT 20
         """
     ).fetchall()
 
-    campaigns = db.execute("SELECT * FROM campaigns ORDER BY name").fetchall()
-    ideas = db.execute("SELECT * FROM idea_vault ORDER BY id DESC LIMIT 8").fetchall()
-    campaign_progress = get_campaign_progress()
-    character, current_outfit, owned_outfits = get_character_data()
-
-    return render_template(
     strategies = db.execute(
         """
         SELECT s.*, q.title AS quest_title
@@ -449,7 +442,14 @@ def dashboard():
         ORDER BY s.id
         """
     ).fetchall()
-    
+
+    campaigns = db.execute("SELECT * FROM campaigns ORDER BY name").fetchall()
+    ideas = db.execute("SELECT * FROM idea_vault ORDER BY id DESC LIMIT 8").fetchall()
+    campaign_progress = get_campaign_progress()
+
+    character, current_outfit, owned_outfits = get_character_data()
+
+    return render_template(
         "dashboard.html",
         profile=TRAIT_PROFILE,
         settings=settings,
@@ -465,8 +465,7 @@ def dashboard():
         current_outfit=current_outfit,
         owned_outfits=owned_outfits,
         strategies=strategies,
-        )
-
+    )
 
 
 @app.post("/energy")
@@ -610,8 +609,62 @@ def complete_quest(quest_id):
 
 @app.post("/quests/<int:quest_id>/delete")
 def delete_quest(quest_id):
+
+    db = get_db()
+
+    quest = db.execute(
+        "SELECT * FROM quests WHERE id = ?", (quest_id,)
+    ).fetchone()
+
+    if not quest:
+        flash("Quest not found.")
+        return redirect(url_for("dashboard"))
+
+    db.execute("DELETE FROM strategies WHERE quest_id = ?", (quest_id,))
+    db.execute("DELETE FROM quests WHERE id = ?", (quest_id,))
+    db.commit()
+
+    flash(f"Deleted quest: {quest['title']}.")
+    return redirect(url_for("dashboard"))
+
+
 @app.post("/strategies/<int:strategy_id>/complete")
 def complete_strategy(strategy_id):
+
+    db = get_db()
+
+    strategy = db.execute(
+        "SELECT * FROM strategies WHERE id = ?", (strategy_id,)
+    ).fetchone()
+
+    if not strategy:
+        flash("Strategy not found.")
+        return redirect(url_for("dashboard"))
+
+    if strategy["completed"]:
+        flash("Strategy already completed.")
+        return redirect(url_for("dashboard"))
+
+    db.execute(
+        "UPDATE strategies SET completed = 1 WHERE id = ?",
+        (strategy_id,),
+    )
+    db.commit()
+
+    leveled, level, unlocked_outfits = add_xp(10)
+
+    message = "Strategy completed! +10 XP."
+
+    if leveled:
+        message += f" You leveled up to Level {level}!"
+
+    if unlocked_outfits:
+        message += " New outfit unlocked: " + ", ".join(unlocked_outfits)
+
+    flash(message)
+
+    return redirect(url_for("dashboard"))
+
 
     db = get_db()
 
