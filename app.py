@@ -107,7 +107,6 @@ def init_db():
         FOREIGN KEY (quest_id) REFERENCES quests(id)
     );
 
-
     CREATE TABLE IF NOT EXISTS idea_vault (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         text TEXT NOT NULL,
@@ -165,6 +164,10 @@ def init_db():
             db.execute("ALTER TABLE profile_settings ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
         if "last_activity_date" not in columns:
             db.execute("ALTER TABLE profile_settings ADD COLUMN last_activity_date TEXT")
+
+        strategy_columns = [row[1] for row in db.execute("PRAGMA table_info(strategies)").fetchall()]
+        if "completed" not in strategy_columns:
+            db.execute("ALTER TABLE strategies ADD COLUMN completed INTEGER NOT NULL DEFAULT 0")
 
         db.execute(
             """
@@ -446,7 +449,6 @@ def dashboard():
     campaigns = db.execute("SELECT * FROM campaigns ORDER BY name").fetchall()
     ideas = db.execute("SELECT * FROM idea_vault ORDER BY id DESC LIMIT 8").fetchall()
     campaign_progress = get_campaign_progress()
-
     character, current_outfit, owned_outfits = get_character_data()
 
     return render_template(
@@ -537,7 +539,10 @@ def add_quest():
 
     strategy_lines = [s.strip() for s in strategies_raw.splitlines() if s.strip()]
     for line in strategy_lines:
-        db.execute("INSERT INTO strategies (quest_id, text) VALUES (?, ?)", (quest_id, line))
+        db.execute(
+            "INSERT INTO strategies (quest_id, text, completed) VALUES (?, ?, 0)",
+            (quest_id, line),
+        )
     db.commit()
 
     strategy_xp = len(strategy_lines) * 10
@@ -609,7 +614,6 @@ def complete_quest(quest_id):
 
 @app.post("/quests/<int:quest_id>/delete")
 def delete_quest(quest_id):
-
     db = get_db()
 
     quest = db.execute(
@@ -630,7 +634,6 @@ def delete_quest(quest_id):
 
 @app.post("/strategies/<int:strategy_id>/complete")
 def complete_strategy(strategy_id):
-
     db = get_db()
 
     strategy = db.execute(
@@ -654,63 +657,12 @@ def complete_strategy(strategy_id):
     leveled, level, unlocked_outfits = add_xp(10)
 
     message = "Strategy completed! +10 XP."
-
     if leveled:
         message += f" You leveled up to Level {level}!"
-
     if unlocked_outfits:
-        message += " New outfit unlocked: " + ", ".join(unlocked_outfits)
+        message += " New outfit unlocked: " + ", ".join(unlocked_outfits) + "."
 
     flash(message)
-
-    return redirect(url_for("dashboard"))
-
-
-    db = get_db()
-
-    strategy = db.execute(
-        "SELECT * FROM strategies WHERE id = ?", (strategy_id,)
-    ).fetchone()
-
-    if not strategy:
-        flash("Strategy not found.")
-        return redirect(url_for("dashboard"))
-
-    if strategy["completed"]:
-        flash("Strategy already completed.")
-        return redirect(url_for("dashboard"))
-
-    db.execute(
-        "UPDATE strategies SET completed = 1 WHERE id = ?", (strategy_id,)
-    )
-    db.commit()
-
-    leveled, level, unlocked_outfits = add_xp(10)
-
-    message = "Strategy completed! +10 XP."
-
-    if leveled:
-        message += f" You leveled up to Level {level}!"
-
-    if unlocked_outfits:
-        message += " New outfit unlocked: " + ", ".join(unlocked_outfits)
-
-    flash(message)
-
-    return redirect(url_for("dashboard"))
-
-    db = get_db()
-    quest = db.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
-
-    if not quest:
-        flash("Quest not found.")
-        return redirect(url_for("dashboard"))
-
-    db.execute("DELETE FROM strategies WHERE quest_id = ?", (quest_id,))
-    db.execute("DELETE FROM quests WHERE id = ?", (quest_id,))
-    db.commit()
-
-    flash(f"Deleted quest: {quest['title']}.")
     return redirect(url_for("dashboard"))
 
 
@@ -730,6 +682,7 @@ def add_idea():
 
     flash("Idea added to the vault.")
     return redirect(url_for("dashboard"))
+
 
 @app.post("/ideas/<int:idea_id>/delete")
 def delete_idea(idea_id):
