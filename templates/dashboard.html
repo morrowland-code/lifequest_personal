@@ -50,6 +50,45 @@
 
     <div class="card">
       <div class="section-title">
+        <h2>Today Focus</h2>
+        <span class="pill">{{ today_quests|length }} selected</span>
+      </div>
+
+      {% if today_quests %}
+        {% for quest in today_quests %}
+          <div class="quest" style="background:#fff7fc;">
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+              <strong>{{ quest.title }}</strong>
+              <span class="pill">{{ quest.xp_reward }} XP</span>
+            </div>
+
+            <div class="muted" style="margin-top:6px;">
+              {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }}
+            </div>
+
+            <div class="actions-inline">
+              <button
+                type="button"
+                class="btn-secondary focus-btn"
+                data-id="{{ quest.id }}"
+                data-title="{{ quest.title }}"
+              >
+                Focus Now
+              </button>
+
+              <form action="{{ url_for('remove_quest_from_today', quest_id=quest.id) }}" method="post">
+                <button type="submit" class="btn-secondary">Remove from Today</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="muted">No quests in Today Focus yet. Add a few from the quest board below.</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="section-title">
         <h2>Focus Timer</h2>
         <span class="pill">Mission Mode</span>
       </div>
@@ -73,7 +112,7 @@
       </div>
 
       <div class="muted" style="margin-top:10px;">
-        Pick a quest below, then start a timer for that mission.
+        Pick any quest from Today Focus or the quest board, then start a timer for that mission.
       </div>
     </div>
 
@@ -106,33 +145,32 @@
                 <strong>{{ quest.title }}</strong>
                 <span class="pill">{{ quest.xp_reward }} XP</span>
               </div>
+
               <div class="muted" style="margin-top:6px;">
                 {{ quest.campaign_name or 'No campaign' }} · {{ quest.strategy_count }} strategies
+                {% if quest.is_today %}
+                  · In Today Focus ✨
+                {% endif %}
               </div>
+
               {% for strategy in strategies if strategy.quest_id == quest.id %}
+                <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                    <span>
+                      {% if strategy.completed %}
+                        ✔ {{ strategy.text }}
+                      {% else %}
+                        ☐ {{ strategy.text }}
+                      {% endif %}
+                    </span>
 
-              <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
-
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-
-                  <span>
-                    {% if strategy.completed %}
-                      ✔ {{ strategy.text }}
-                    {% else %}
-                      ☐ {{ strategy.text }}
+                    {% if not strategy.completed %}
+                      <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
+                        <button type="submit" class="btn-secondary">+10 XP</button>
+                      </form>
                     {% endif %}
-                  </span>
-
-                  {% if not strategy.completed %}
-                  <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
-                    <button type="submit" class="btn-secondary">+10 XP</button>
-                  </form>
-                  {% endif %}
-
+                  </div>
                 </div>
-
-              </div>
-
               {% endfor %}
 
               {% if quest.notes %}
@@ -149,9 +187,20 @@
                   Focus This Quest
                 </button>
 
+                {% if quest.is_today %}
+                  <form action="{{ url_for('remove_quest_from_today', quest_id=quest.id) }}" method="post">
+                    <button type="submit" class="btn-secondary">Remove from Today</button>
+                  </form>
+                {% else %}
+                  <form action="{{ url_for('add_quest_to_today', quest_id=quest.id) }}" method="post">
+                    <button type="submit" class="btn-secondary">Add to Today</button>
+                  </form>
+                {% endif %}
+
                 <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
                   <button type="submit">Complete Quest</button>
                 </form>
+
                 <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
                   <button type="submit" class="btn-danger">Delete</button>
                 </form>
@@ -394,6 +443,9 @@
           </div>
           <div class="muted">
             {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
+            {% if quest.is_today %}
+              · In Today Focus ✨
+            {% endif %}
           </div>
           {% if quest.notes %}
             <div style="margin-top:6px;">{{ quest.notes }}</div>
@@ -407,30 +459,21 @@
 </div>
 
 <script>
-
 document.addEventListener("DOMContentLoaded", function () {
-
   const buttons = document.querySelectorAll(".focus-btn");
 
   buttons.forEach(btn => {
-
     btn.addEventListener("click", function () {
-
       const questId = this.dataset.id;
       const questTitle = this.dataset.title;
 
       if (typeof selectQuest === "function") {
         selectQuest(questId, questTitle);
       }
-
     });
-
   });
-
 });
-
 </script>
-
 
 <script src="{{ url_for('static', filename='timer.js') }}"></script>
 
