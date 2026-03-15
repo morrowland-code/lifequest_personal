@@ -109,14 +109,46 @@
               <div class="muted" style="margin-top:6px;">
                 {{ quest.campaign_name or 'No campaign' }} · {{ quest.strategy_count }} strategies
               </div>
+              {% for strategy in strategies if strategy.quest_id == quest.id %}
+
+              <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
+
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+
+                  <span>
+                    {% if strategy.completed %}
+                      ✔ {{ strategy.text }}
+                    {% else %}
+                      ☐ {{ strategy.text }}
+                    {% endif %}
+                  </span>
+
+                  {% if not strategy.completed %}
+                  <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
+                    <button type="submit" class="btn-secondary">+10 XP</button>
+                  </form>
+                  {% endif %}
+
+                </div>
+
+              </div>
+
+              {% endfor %}
+
               {% if quest.notes %}
                 <div style="margin-top:8px;">{{ quest.notes }}</div>
               {% endif %}
 
               <div class="actions-inline">
-                <button type="button" class="btn-secondary" onclick="selectQuest({{ quest.id }}, {{ quest.title|tojson }})">
+                <button
+                  type="button"
+                  class="btn-secondary focus-btn"
+                  data-id="{{ quest.id }}"
+                  data-title="{{ quest.title }}"
+                >
                   Focus This Quest
                 </button>
+
                 <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
                   <button type="submit">Complete Quest</button>
                 </form>
@@ -374,10 +406,32 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='timer.js') }}"></script>
-
 <script>
-alert("JS LOADED");
+
+document.addEventListener("DOMContentLoaded", function () {
+
+  const buttons = document.querySelectorAll(".focus-btn");
+
+  buttons.forEach(btn => {
+
+    btn.addEventListener("click", function () {
+
+      const questId = this.dataset.id;
+      const questTitle = this.dataset.title;
+
+      if (typeof selectQuest === "function") {
+        selectQuest(questId, questTitle);
+      }
+
+    });
+
+  });
+
+});
+
 </script>
+
+
+<script src="{{ url_for('static', filename='timer.js') }}"></script>
 
 {% endblock %}
