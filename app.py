@@ -758,6 +758,10 @@ def reset_day():
     return redirect(url_for("dashboard"))
 
 
-if __name__ == "__main__":
+with app.app_context():
     init_db()
+
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+    
