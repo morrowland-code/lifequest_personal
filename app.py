@@ -155,15 +155,19 @@ def init_db():
             "INSERT OR IGNORE INTO profile_settings (id, energy_mode, total_xp) VALUES (1, 'normal', 0)"
         )
 
-        columns = [row[1] for row in db.execute("PRAGMA table_info(profile_settings)").fetchall()]
-        if "level" not in columns:
+        profile_columns = [row[1] for row in db.execute("PRAGMA table_info(profile_settings)").fetchall()]
+        if "level" not in profile_columns:
             db.execute("ALTER TABLE profile_settings ADD COLUMN level INTEGER NOT NULL DEFAULT 1")
-        if "current_xp" not in columns:
+        if "current_xp" not in profile_columns:
             db.execute("ALTER TABLE profile_settings ADD COLUMN current_xp INTEGER NOT NULL DEFAULT 0")
-        if "daily_streak" not in columns:
+        if "daily_streak" not in profile_columns:
             db.execute("ALTER TABLE profile_settings ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
-        if "last_activity_date" not in columns:
+        if "last_activity_date" not in profile_columns:
             db.execute("ALTER TABLE profile_settings ADD COLUMN last_activity_date TEXT")
+
+        quest_columns = [row[1] for row in db.execute("PRAGMA table_info(quests)").fetchall()]
+        if "is_today" not in quest_columns:
+            db.execute("ALTER TABLE quests ADD COLUMN is_today INTEGER NOT NULL DEFAULT 0")
 
         strategy_columns = [row[1] for row in db.execute("PRAGMA table_info(strategies)").fetchall()]
         if "completed" not in strategy_columns:
@@ -425,6 +429,16 @@ def dashboard():
         """
     ).fetchall()
 
+    today_quests = db.execute(
+        """
+        SELECT q.*, c.name AS campaign_name
+        FROM quests q
+        LEFT JOIN campaigns c ON c.id = q.campaign_id
+        WHERE q.status = 'todo' AND q.is_today = 1
+        ORDER BY q.id ASC
+        """
+    ).fetchall()
+
     completed_quests = db.execute(
         """
         SELECT q.*, c.name AS campaign_name
@@ -458,6 +472,7 @@ def dashboard():
         daily_log=daily_log,
         quest_board=quest_board,
         active_quests=active_quests,
+        today_quests=today_quests,
         completed_quests=completed_quests,
         campaigns=campaigns,
         ideas=ideas,
@@ -480,6 +495,40 @@ def set_energy():
     db.execute("UPDATE profile_settings SET energy_mode = ? WHERE id = 1", (energy_mode,))
     db.commit()
     flash(f"Energy mode set to {energy_mode}.")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/quests/<int:quest_id>/add-to-today")
+def add_quest_to_today(quest_id):
+    db = get_db()
+
+    quest = db.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
+    if not quest:
+        flash("Quest not found.")
+        return redirect(url_for("dashboard"))
+
+    if quest["status"] == "done":
+        flash("Completed quests cannot be added to Today Focus.")
+        return redirect(url_for("dashboard"))
+
+    db.execute("UPDATE quests SET is_today = 1 WHERE id = ?", (quest_id,))
+    db.commit()
+    flash(f"Added to Today Focus: {quest['title']}.")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/quests/<int:quest_id>/remove-from-today")
+def remove_quest_from_today(quest_id):
+    db = get_db()
+
+    quest = db.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
+    if not quest:
+        flash("Quest not found.")
+        return redirect(url_for("dashboard"))
+
+    db.execute("UPDATE quests SET is_today = 0 WHERE id = ?", (quest_id,))
+    db.commit()
+    flash(f"Removed from Today Focus: {quest['title']}.")
     return redirect(url_for("dashboard"))
 
 
@@ -530,8 +579,8 @@ def add_quest():
     db = get_db()
     cur = db.execute(
         """
-        INSERT INTO quests (title, notes, campaign_id, category, status, xp_reward, created_at)
-        VALUES (?, ?, ?, ?, 'todo', ?, ?)
+        INSERT INTO quests (title, notes, campaign_id, category, status, xp_reward, created_at, is_today)
+        VALUES (?, ?, ?, ?, 'todo', ?, ?, 0)
         """,
         (title, notes, campaign_id, category, xp_reward, datetime.utcnow().isoformat()),
     )
@@ -573,7 +622,7 @@ def complete_quest(quest_id):
 
     total_gain = quest["xp_reward"]
     db.execute(
-        "UPDATE quests SET status = 'done', completed_at = ? WHERE id = ?",
+        "UPDATE quests SET status = 'done', completed_at = ?, is_today = 0 WHERE id = ?",
         (datetime.utcnow().isoformat(), quest_id),
     )
     db.commit()
@@ -764,4 +813,3 @@ with app.app_context():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-    
