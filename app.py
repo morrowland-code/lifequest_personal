@@ -767,7 +767,7 @@ def add_idea():
     db.commit()
     backup_db()
 
-    flash("Idea added to the vault.")
+    flash("Idea added to the vault. NEW VERSION")
     return redirect(url_for("dashboard"))
 
 
