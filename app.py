@@ -1,32 +1,18 @@
 from __future__ import annotations
 
-import sqlite3
+import os
 from contextlib import closing
-from datetime import date, datetime
-from pathlib import Path
+from datetime import date, datetime, timezone
 
+import psycopg
+from psycopg.rows import dict_row
 from flask import Flask, flash, g, redirect, render_template, request, url_for
 
 
-# Use persistent disk if available on your host, otherwise fall back to the app folder
-try:
-    BASE_DIR = Path("/data")
-    BASE_DIR.mkdir(parents=True, exist_ok=True)
-except Exception:
-    BASE_DIR = Path(__file__).resolve().parent
-
-DB_PATH = BASE_DIR / "lifequest.db"
-
-
-def backup_db():
-    backup_path = BASE_DIR / "lifequest_backup.db"
-    with sqlite3.connect(DB_PATH) as source:
-        with sqlite3.connect(backup_path) as dest:
-            source.backup(dest)
-
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "dev-secret-change-me"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 TRAIT_PROFILE = {
     "archetype": "Terrabeacon",
@@ -62,10 +48,15 @@ STARTER_OUTFITS = [
 ]
 
 
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        if not DATABASE_URL:
+            raise RuntimeError("DATABASE_URL is not set.")
+        g.db = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     return g.db
 
 
@@ -90,47 +81,49 @@ def safe_int(value, default=0, minimum=None):
 def init_db():
     schema = """
     CREATE TABLE IF NOT EXISTS profile_settings (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
+        id INTEGER PRIMARY KEY,
         energy_mode TEXT NOT NULL DEFAULT 'normal',
-        total_xp INTEGER NOT NULL DEFAULT 0
+        total_xp INTEGER NOT NULL DEFAULT 0,
+        level INTEGER NOT NULL DEFAULT 1,
+        current_xp INTEGER NOT NULL DEFAULT 0,
+        daily_streak INTEGER NOT NULL DEFAULT 0,
+        last_activity_date TEXT
     );
 
     CREATE TABLE IF NOT EXISTS campaigns (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
         description TEXT DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS quests (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         title TEXT NOT NULL,
         notes TEXT DEFAULT '',
-        campaign_id INTEGER,
+        campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL,
         category TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'todo',
         xp_reward INTEGER NOT NULL DEFAULT 25,
         created_at TEXT NOT NULL,
         completed_at TEXT,
-        is_today INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+        is_today INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS strategies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        quest_id INTEGER NOT NULL,
+        id SERIAL PRIMARY KEY,
+        quest_id INTEGER NOT NULL REFERENCES quests(id) ON DELETE CASCADE,
         text TEXT NOT NULL,
-        completed INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (quest_id) REFERENCES quests(id)
+        completed INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS idea_vault (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         text TEXT NOT NULL,
         created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS daily_log (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
+        id INTEGER PRIMARY KEY,
         protein_goal INTEGER NOT NULL DEFAULT 120,
         protein_value INTEGER NOT NULL DEFAULT 0,
         water_goal INTEGER NOT NULL DEFAULT 8,
@@ -140,14 +133,14 @@ def init_db():
     );
 
     CREATE TABLE IF NOT EXISTS character_profile (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
+        id INTEGER PRIMARY KEY,
         character_name TEXT NOT NULL DEFAULT 'Terrabeacon Hero',
         current_outfit_id INTEGER,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS outfit_store (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
         slot TEXT NOT NULL DEFAULT 'outfit',
         rarity TEXT NOT NULL DEFAULT 'common',
@@ -156,180 +149,167 @@ def init_db():
     );
 
     CREATE TABLE IF NOT EXISTS owned_outfits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        outfit_id INTEGER NOT NULL UNIQUE,
+        id SERIAL PRIMARY KEY,
+        outfit_id INTEGER NOT NULL UNIQUE REFERENCES outfit_store(id) ON DELETE CASCADE,
         unlocked_at TEXT NOT NULL,
-        source TEXT NOT NULL DEFAULT 'level',
-        FOREIGN KEY (outfit_id) REFERENCES outfit_store(id)
+        source TEXT NOT NULL DEFAULT 'level'
     );
     """
 
-    with closing(sqlite3.connect(DB_PATH)) as db:
-        db.executescript(schema)
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set.")
 
-        db.execute(
-            "INSERT OR IGNORE INTO profile_settings (id, energy_mode, total_xp) VALUES (1, 'normal', 0)"
-        )
+    with closing(psycopg.connect(DATABASE_URL, row_factory=dict_row)) as db:
+        with db.cursor() as cur:
+            cur.execute(schema)
 
-        profile_columns = [row[1] for row in db.execute("PRAGMA table_info(profile_settings)").fetchall()]
-        if "level" not in profile_columns:
-            db.execute("ALTER TABLE profile_settings ADD COLUMN level INTEGER NOT NULL DEFAULT 1")
-        if "current_xp" not in profile_columns:
-            db.execute("ALTER TABLE profile_settings ADD COLUMN current_xp INTEGER NOT NULL DEFAULT 0")
-        if "daily_streak" not in profile_columns:
-            db.execute("ALTER TABLE profile_settings ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
-        if "last_activity_date" not in profile_columns:
-            db.execute("ALTER TABLE profile_settings ADD COLUMN last_activity_date TEXT")
+            cur.execute("""
+                INSERT INTO profile_settings (id, energy_mode, total_xp, level, current_xp, daily_streak, last_activity_date)
+                VALUES (1, 'normal', 0, 1, 0, 0, NULL)
+                ON CONFLICT (id) DO NOTHING
+            """)
 
-        quest_columns = [row[1] for row in db.execute("PRAGMA table_info(quests)").fetchall()]
-        if "is_today" not in quest_columns:
-            db.execute("ALTER TABLE quests ADD COLUMN is_today INTEGER NOT NULL DEFAULT 0")
+            cur.execute("INSERT INTO daily_log (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+            cur.execute("INSERT INTO character_profile (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
 
-        strategy_columns = [row[1] for row in db.execute("PRAGMA table_info(strategies)").fetchall()]
-        if "completed" not in strategy_columns:
-            db.execute("ALTER TABLE strategies ADD COLUMN completed INTEGER NOT NULL DEFAULT 0")
+            for name in CAMPAIGN_OPTIONS:
+                cur.execute(
+                    "INSERT INTO campaigns (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                    (name,),
+                )
 
-        db.execute(
-            """
-            UPDATE profile_settings
-            SET
-                level = COALESCE(level, 1),
-                current_xp = COALESCE(current_xp, 0),
-                daily_streak = COALESCE(daily_streak, 0)
-            WHERE id = 1
-            """
-        )
-
-        db.execute("INSERT OR IGNORE INTO daily_log (id) VALUES (1)")
-        db.execute("INSERT OR IGNORE INTO character_profile (id) VALUES (1)")
-
-        for name in CAMPAIGN_OPTIONS:
-            db.execute("INSERT OR IGNORE INTO campaigns (name) VALUES (?)", (name,))
-
-        for outfit in STARTER_OUTFITS:
-            db.execute(
-                """
-                INSERT OR IGNORE INTO outfit_store (name, slot, rarity, unlock_level, xp_cost)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    outfit["name"],
-                    outfit["slot"],
-                    outfit["rarity"],
-                    outfit["unlock_level"],
-                    outfit["xp_cost"],
-                ),
-            )
+            for outfit in STARTER_OUTFITS:
+                cur.execute(
+                    """
+                    INSERT INTO outfit_store (name, slot, rarity, unlock_level, xp_cost)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (name) DO NOTHING
+                    """,
+                    (
+                        outfit["name"],
+                        outfit["slot"],
+                        outfit["rarity"],
+                        outfit["unlock_level"],
+                        outfit["xp_cost"],
+                    ),
+                )
 
         db.commit()
 
     with app.app_context():
         unlock_outfits_for_level()
 
-    backup_db()
-
 
 def unlock_outfits_for_level():
     db = get_db()
-    profile = db.execute("SELECT level FROM profile_settings WHERE id = 1").fetchone()
-    level = profile["level"]
+    with db.cursor() as cur:
+        cur.execute("SELECT level FROM profile_settings WHERE id = 1")
+        profile = cur.fetchone()
+        level = profile["level"]
 
-    eligible = db.execute(
-        """
-        SELECT id, name
-        FROM outfit_store
-        WHERE unlock_level <= ?
-          AND id NOT IN (SELECT outfit_id FROM owned_outfits)
-        ORDER BY unlock_level, id
-        """,
-        (level,),
-    ).fetchall()
-
-    unlocked_names = []
-    for row in eligible:
-        db.execute(
+        cur.execute(
             """
-            INSERT OR IGNORE INTO owned_outfits (outfit_id, unlocked_at, source)
-            VALUES (?, ?, 'level')
+            SELECT id, name
+            FROM outfit_store
+            WHERE unlock_level <= %s
+              AND id NOT IN (SELECT outfit_id FROM owned_outfits)
+            ORDER BY unlock_level, id
             """,
-            (row["id"], datetime.utcnow().isoformat()),
+            (level,),
         )
-        unlocked_names.append(row["name"])
+        eligible = cur.fetchall()
 
-    current = db.execute(
-        "SELECT current_outfit_id FROM character_profile WHERE id = 1"
-    ).fetchone()
-
-    if current["current_outfit_id"] is None:
-        first_owned = db.execute(
-            """
-            SELECT outfit_id
-            FROM owned_outfits
-            ORDER BY id ASC
-            LIMIT 1
-            """
-        ).fetchone()
-        if first_owned:
-            db.execute(
-                "UPDATE character_profile SET current_outfit_id = ? WHERE id = 1",
-                (first_owned["outfit_id"],),
+        unlocked_names = []
+        for row in eligible:
+            cur.execute(
+                """
+                INSERT INTO owned_outfits (outfit_id, unlocked_at, source)
+                VALUES (%s, %s, 'level')
+                ON CONFLICT (outfit_id) DO NOTHING
+                """,
+                (row["id"], utc_now_iso()),
             )
+            unlocked_names.append(row["name"])
+
+        cur.execute("SELECT current_outfit_id FROM character_profile WHERE id = 1")
+        current = cur.fetchone()
+
+        if current["current_outfit_id"] is None:
+            cur.execute(
+                """
+                SELECT outfit_id
+                FROM owned_outfits
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            )
+            first_owned = cur.fetchone()
+
+            if first_owned:
+                cur.execute(
+                    "UPDATE character_profile SET current_outfit_id = %s WHERE id = 1",
+                    (first_owned["outfit_id"],),
+                )
 
     db.commit()
-    backup_db()
     return unlocked_names
 
 
 def get_character_data():
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM character_profile WHERE id = 1")
+        character = cur.fetchone()
 
-    character = db.execute("SELECT * FROM character_profile WHERE id = 1").fetchone()
+        current_outfit = None
+        if character and character["current_outfit_id"]:
+            cur.execute(
+                "SELECT * FROM outfit_store WHERE id = %s",
+                (character["current_outfit_id"],),
+            )
+            current_outfit = cur.fetchone()
 
-    current_outfit = None
-    if character and character["current_outfit_id"]:
-        current_outfit = db.execute(
-            "SELECT * FROM outfit_store WHERE id = ?",
-            (character["current_outfit_id"],),
-        ).fetchone()
-
-    owned_outfits = db.execute(
-        """
-        SELECT os.*, oo.unlocked_at, oo.source
-        FROM outfit_store os
-        JOIN owned_outfits oo ON oo.outfit_id = os.id
-        ORDER BY os.unlock_level, os.id
-        """
-    ).fetchall()
+        cur.execute(
+            """
+            SELECT os.*, oo.unlocked_at, oo.source
+            FROM outfit_store os
+            JOIN owned_outfits oo ON oo.outfit_id = os.id
+            ORDER BY os.unlock_level, os.id
+            """
+        )
+        owned_outfits = cur.fetchall()
 
     return character, current_outfit, owned_outfits
 
 
 def add_xp(amount):
     db = get_db()
-    profile = db.execute(
-        "SELECT level, current_xp FROM profile_settings WHERE id = 1"
-    ).fetchone()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT level, current_xp FROM profile_settings WHERE id = 1"
+        )
+        profile = cur.fetchone()
 
-    old_level = profile["level"]
-    level = old_level
-    xp = profile["current_xp"] + amount
-    leveled_up = False
+        old_level = profile["level"]
+        level = old_level
+        xp = profile["current_xp"] + amount
+        leveled_up = False
 
-    while xp >= level * 100:
-        xp -= level * 100
-        level += 1
-        leveled_up = True
+        while xp >= level * 100:
+            xp -= level * 100
+            level += 1
+            leveled_up = True
 
-    db.execute(
-        """
-        UPDATE profile_settings
-        SET level = ?, current_xp = ?, total_xp = total_xp + ?
-        WHERE id = 1
-        """,
-        (level, xp, amount),
-    )
+        cur.execute(
+            """
+            UPDATE profile_settings
+            SET level = %s, current_xp = %s, total_xp = total_xp + %s
+            WHERE id = 1
+            """,
+            (level, xp, amount),
+        )
+
     db.commit()
-    backup_db()
 
     unlocked_outfits = []
     if level > old_level:
@@ -340,62 +320,65 @@ def add_xp(amount):
 
 def apply_daily_streak():
     db = get_db()
-    profile = db.execute(
-        "SELECT daily_streak, last_activity_date FROM profile_settings WHERE id = 1"
-    ).fetchone()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT daily_streak, last_activity_date FROM profile_settings WHERE id = 1"
+        )
+        profile = cur.fetchone()
 
-    today = date.today()
-    today_str = today.isoformat()
-    last_date_str = profile["last_activity_date"]
-    current_streak = profile["daily_streak"] or 0
+        today = date.today()
+        today_str = today.isoformat()
+        last_date_str = profile["last_activity_date"]
+        current_streak = profile["daily_streak"] or 0
 
-    if last_date_str == today_str:
-        return 0, current_streak, False
+        if last_date_str == today_str:
+            return 0, current_streak, False
 
-    streak_bonus = 0
-    new_streak = 1
+        streak_bonus = 0
+        new_streak = 1
 
-    if last_date_str:
-        try:
-            last_date = date.fromisoformat(last_date_str)
-            delta_days = (today - last_date).days
-            if delta_days == 1:
-                new_streak = current_streak + 1
-        except ValueError:
-            new_streak = 1
+        if last_date_str:
+            try:
+                last_date = date.fromisoformat(last_date_str)
+                delta_days = (today - last_date).days
+                if delta_days == 1:
+                    new_streak = current_streak + 1
+            except ValueError:
+                new_streak = 1
 
-    if new_streak > 1:
-        streak_bonus = min(new_streak * 5, 50)
+        if new_streak > 1:
+            streak_bonus = min(new_streak * 5, 50)
 
-    db.execute(
-        """
-        UPDATE profile_settings
-        SET daily_streak = ?, last_activity_date = ?
-        WHERE id = 1
-        """,
-        (new_streak, today_str),
-    )
+        cur.execute(
+            """
+            UPDATE profile_settings
+            SET daily_streak = %s, last_activity_date = %s
+            WHERE id = 1
+            """,
+            (new_streak, today_str),
+        )
+
     db.commit()
-    backup_db()
-
     return streak_bonus, new_streak, True
 
 
 def get_campaign_progress():
     db = get_db()
-    rows = db.execute(
-        """
-        SELECT
-            c.id,
-            c.name,
-            COUNT(q.id) AS total_quests,
-            COALESCE(SUM(CASE WHEN q.status = 'done' THEN 1 ELSE 0 END), 0) AS completed_quests
-        FROM campaigns c
-        LEFT JOIN quests q ON q.campaign_id = c.id
-        GROUP BY c.id, c.name
-        ORDER BY c.name
-        """
-    ).fetchall()
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                c.id,
+                c.name,
+                COUNT(q.id) AS total_quests,
+                COALESCE(SUM(CASE WHEN q.status = 'done' THEN 1 ELSE 0 END), 0) AS completed_quests
+            FROM campaigns c
+            LEFT JOIN quests q ON q.campaign_id = c.id
+            GROUP BY c.id, c.name
+            ORDER BY c.name
+            """
+        )
+        rows = cur.fetchall()
 
     progress = []
     for row in rows:
@@ -417,74 +400,86 @@ def get_campaign_progress():
 @app.route("/")
 def dashboard():
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM profile_settings WHERE id = 1")
+        settings = cur.fetchone()
 
-    settings = db.execute("SELECT * FROM profile_settings WHERE id = 1").fetchone()
-    daily_log = db.execute("SELECT * FROM daily_log WHERE id = 1").fetchone()
+        cur.execute("SELECT * FROM daily_log WHERE id = 1")
+        daily_log = cur.fetchone()
 
-    energy_mode = settings["energy_mode"]
-    limits = ENERGY_PRESETS.get(energy_mode, ENERGY_PRESETS["normal"])
+        energy_mode = settings["energy_mode"]
+        limits = ENERGY_PRESETS.get(energy_mode, ENERGY_PRESETS["normal"])
 
-    quest_board = {}
-    for category in CATEGORY_OPTIONS:
-        limit = limits.get(category, 0)
-        quest_board[category] = db.execute(
+        quest_board = {}
+        for category in CATEGORY_OPTIONS:
+            limit = limits.get(category, 0)
+            cur.execute(
+                """
+                SELECT q.*, c.name AS campaign_name,
+                       (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
+                FROM quests q
+                LEFT JOIN campaigns c ON c.id = q.campaign_id
+                WHERE q.status = 'todo' AND q.category = %s
+                ORDER BY q.id ASC
+                LIMIT %s
+                """,
+                (category, limit),
+            )
+            quest_board[category] = cur.fetchall()
+
+        cur.execute(
             """
             SELECT q.*, c.name AS campaign_name,
                    (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
             FROM quests q
             LEFT JOIN campaigns c ON c.id = q.campaign_id
-            WHERE q.status = 'todo' AND q.category = ?
+            WHERE q.status = 'todo'
+            ORDER BY q.id DESC
+            """
+        )
+        active_quests = cur.fetchall()
+
+        cur.execute(
+            """
+            SELECT q.*, c.name AS campaign_name,
+                   (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
+            FROM quests q
+            LEFT JOIN campaigns c ON c.id = q.campaign_id
+            WHERE q.status = 'todo' AND q.is_today = 1
             ORDER BY q.id ASC
-            LIMIT ?
-            """,
-            (category, limit),
-        ).fetchall()
+            """
+        )
+        today_quests = cur.fetchall()
 
-    active_quests = db.execute(
-        """
-        SELECT q.*, c.name AS campaign_name,
-               (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
-        FROM quests q
-        LEFT JOIN campaigns c ON c.id = q.campaign_id
-        WHERE q.status = 'todo'
-        ORDER BY q.id DESC
-        """
-    ).fetchall()
+        cur.execute(
+            """
+            SELECT q.*, c.name AS campaign_name
+            FROM quests q
+            LEFT JOIN campaigns c ON c.id = q.campaign_id
+            WHERE q.status = 'done'
+            ORDER BY q.completed_at DESC
+            LIMIT 20
+            """
+        )
+        completed_quests = cur.fetchall()
 
-    today_quests = db.execute(
-        """
-        SELECT q.*, c.name AS campaign_name,
-               (SELECT COUNT(*) FROM strategies s WHERE s.quest_id = q.id) AS strategy_count
-        FROM quests q
-        LEFT JOIN campaigns c ON c.id = q.campaign_id
-        WHERE q.status = 'todo' AND q.is_today = 1
-        ORDER BY q.id ASC
-        """
-    ).fetchall()
+        cur.execute(
+            """
+            SELECT s.*, q.title AS quest_title
+            FROM strategies s
+            JOIN quests q ON q.id = s.quest_id
+            WHERE q.status = 'todo'
+            ORDER BY q.id ASC, s.id ASC
+            """
+        )
+        strategies = cur.fetchall()
 
-    completed_quests = db.execute(
-        """
-        SELECT q.*, c.name AS campaign_name
-        FROM quests q
-        LEFT JOIN campaigns c ON c.id = q.campaign_id
-        WHERE q.status = 'done'
-        ORDER BY q.completed_at DESC
-        LIMIT 20
-        """
-    ).fetchall()
+        cur.execute("SELECT * FROM campaigns ORDER BY name")
+        campaigns = cur.fetchall()
 
-    strategies = db.execute(
-        """
-        SELECT s.*, q.title AS quest_title
-        FROM strategies s
-        JOIN quests q ON q.id = s.quest_id
-        WHERE q.status = 'todo'
-        ORDER BY q.id ASC, s.id ASC
-        """
-    ).fetchall()
+        cur.execute("SELECT * FROM idea_vault ORDER BY id DESC LIMIT 8")
+        ideas = cur.fetchall()
 
-    campaigns = db.execute("SELECT * FROM campaigns ORDER BY name").fetchall()
-    ideas = db.execute("SELECT * FROM idea_vault ORDER BY id DESC LIMIT 8").fetchall()
     campaign_progress = get_campaign_progress()
     character, current_outfit, owned_outfits = get_character_data()
 
@@ -515,9 +510,10 @@ def set_energy():
         energy_mode = "normal"
 
     db = get_db()
-    db.execute("UPDATE profile_settings SET energy_mode = ? WHERE id = 1", (energy_mode,))
+    with db.cursor() as cur:
+        cur.execute("UPDATE profile_settings SET energy_mode = %s WHERE id = 1", (energy_mode,))
     db.commit()
-    backup_db()
+
     flash(f"Energy mode set to {energy_mode}.")
     return redirect(url_for("dashboard"))
 
@@ -525,19 +521,21 @@ def set_energy():
 @app.post("/quests/<int:quest_id>/add-to-today")
 def add_quest_to_today(quest_id):
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM quests WHERE id = %s", (quest_id,))
+        quest = cur.fetchone()
 
-    quest = db.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
-    if not quest:
-        flash("Quest not found.")
-        return redirect(url_for("dashboard"))
+        if not quest:
+            flash("Quest not found.")
+            return redirect(url_for("dashboard"))
 
-    if quest["status"] == "done":
-        flash("Completed quests cannot be added to Today Focus.")
-        return redirect(url_for("dashboard"))
+        if quest["status"] == "done":
+            flash("Completed quests cannot be added to Today Focus.")
+            return redirect(url_for("dashboard"))
 
-    db.execute("UPDATE quests SET is_today = 1 WHERE id = ?", (quest_id,))
+        cur.execute("UPDATE quests SET is_today = 1 WHERE id = %s", (quest_id,))
     db.commit()
-    backup_db()
+
     flash(f"Added to Today Focus: {quest['title']}.")
     return redirect(url_for("dashboard"))
 
@@ -545,15 +543,17 @@ def add_quest_to_today(quest_id):
 @app.post("/quests/<int:quest_id>/remove-from-today")
 def remove_quest_from_today(quest_id):
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM quests WHERE id = %s", (quest_id,))
+        quest = cur.fetchone()
 
-    quest = db.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
-    if not quest:
-        flash("Quest not found.")
-        return redirect(url_for("dashboard"))
+        if not quest:
+            flash("Quest not found.")
+            return redirect(url_for("dashboard"))
 
-    db.execute("UPDATE quests SET is_today = 0 WHERE id = ?", (quest_id,))
+        cur.execute("UPDATE quests SET is_today = 0 WHERE id = %s", (quest_id,))
     db.commit()
-    backup_db()
+
     flash(f"Removed from Today Focus: {quest['title']}.")
     return redirect(url_for("dashboard"))
 
@@ -561,27 +561,28 @@ def remove_quest_from_today(quest_id):
 @app.post("/character/equip/<int:outfit_id>")
 def equip_outfit(outfit_id):
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT os.*
+            FROM outfit_store os
+            JOIN owned_outfits oo ON oo.outfit_id = os.id
+            WHERE os.id = %s
+            """,
+            (outfit_id,),
+        )
+        owned = cur.fetchone()
 
-    owned = db.execute(
-        """
-        SELECT os.*
-        FROM outfit_store os
-        JOIN owned_outfits oo ON oo.outfit_id = os.id
-        WHERE os.id = ?
-        """,
-        (outfit_id,),
-    ).fetchone()
+        if not owned:
+            flash("You don't own that outfit yet.")
+            return redirect(url_for("dashboard"))
 
-    if not owned:
-        flash("You don't own that outfit yet.")
-        return redirect(url_for("dashboard"))
-
-    db.execute(
-        "UPDATE character_profile SET current_outfit_id = ? WHERE id = 1",
-        (outfit_id,),
-    )
+        cur.execute(
+            "UPDATE character_profile SET current_outfit_id = %s WHERE id = 1",
+            (outfit_id,),
+        )
     db.commit()
-    backup_db()
+
     flash(f"Equipped outfit: {owned['name']}.")
     return redirect(url_for("dashboard"))
 
@@ -603,23 +604,25 @@ def add_quest():
         category = "side"
 
     db = get_db()
-    cur = db.execute(
-        """
-        INSERT INTO quests (title, notes, campaign_id, category, status, xp_reward, created_at, is_today)
-        VALUES (?, ?, ?, ?, 'todo', ?, ?, 0)
-        """,
-        (title, notes, campaign_id, category, xp_reward, datetime.utcnow().isoformat()),
-    )
-    quest_id = cur.lastrowid
-
-    strategy_lines = [s.strip() for s in strategies_raw.splitlines() if s.strip()]
-    for line in strategy_lines:
-        db.execute(
-            "INSERT INTO strategies (quest_id, text, completed) VALUES (?, ?, 0)",
-            (quest_id, line),
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO quests (title, notes, campaign_id, category, status, xp_reward, created_at, is_today)
+            VALUES (%s, %s, %s, %s, 'todo', %s, %s, 0)
+            RETURNING id
+            """,
+            (title, notes, campaign_id, category, xp_reward, utc_now_iso()),
         )
+        quest_id = cur.fetchone()["id"]
+
+        strategy_lines = [s.strip() for s in strategies_raw.splitlines() if s.strip()]
+        for line in strategy_lines:
+            cur.execute(
+                "INSERT INTO strategies (quest_id, text, completed) VALUES (%s, %s, 0)",
+                (quest_id, line),
+            )
+
     db.commit()
-    backup_db()
 
     strategy_xp = len(strategy_lines) * 10
     leveled, level, unlocked_outfits = add_xp(strategy_xp)
@@ -637,23 +640,24 @@ def add_quest():
 @app.post("/quests/<int:quest_id>/complete")
 def complete_quest(quest_id):
     db = get_db()
-    quest = db.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM quests WHERE id = %s", (quest_id,))
+        quest = cur.fetchone()
 
-    if not quest:
-        flash("Quest not found.")
-        return redirect(url_for("dashboard"))
+        if not quest:
+            flash("Quest not found.")
+            return redirect(url_for("dashboard"))
 
-    if quest["status"] == "done":
-        flash("Quest already completed.")
-        return redirect(url_for("dashboard"))
+        if quest["status"] == "done":
+            flash("Quest already completed.")
+            return redirect(url_for("dashboard"))
 
-    total_gain = quest["xp_reward"]
-    db.execute(
-        "UPDATE quests SET status = 'done', completed_at = ?, is_today = 0 WHERE id = ?",
-        (datetime.utcnow().isoformat(), quest_id),
-    )
+        total_gain = quest["xp_reward"]
+        cur.execute(
+            "UPDATE quests SET status = 'done', completed_at = %s, is_today = 0 WHERE id = %s",
+            (utc_now_iso(), quest_id),
+        )
     db.commit()
-    backup_db()
 
     streak_bonus, new_streak, streak_updated = apply_daily_streak()
     base_leveled, base_level, base_outfits = add_xp(total_gain)
@@ -692,20 +696,16 @@ def complete_quest(quest_id):
 @app.post("/quests/<int:quest_id>/delete")
 def delete_quest(quest_id):
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM quests WHERE id = %s", (quest_id,))
+        quest = cur.fetchone()
 
-    quest = db.execute(
-        "SELECT * FROM quests WHERE id = ?",
-        (quest_id,),
-    ).fetchone()
+        if not quest:
+            flash("Quest not found.")
+            return redirect(url_for("dashboard"))
 
-    if not quest:
-        flash("Quest not found.")
-        return redirect(url_for("dashboard"))
-
-    db.execute("DELETE FROM strategies WHERE quest_id = ?", (quest_id,))
-    db.execute("DELETE FROM quests WHERE id = ?", (quest_id,))
+        cur.execute("DELETE FROM quests WHERE id = %s", (quest_id,))
     db.commit()
-    backup_db()
 
     flash(f"Deleted quest: {quest['title']}.")
     return redirect(url_for("dashboard"))
@@ -714,31 +714,31 @@ def delete_quest(quest_id):
 @app.post("/strategies/<int:strategy_id>/complete")
 def complete_strategy(strategy_id):
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT s.*, q.title AS quest_title
+            FROM strategies s
+            JOIN quests q ON q.id = s.quest_id
+            WHERE s.id = %s
+            """,
+            (strategy_id,),
+        )
+        strategy = cur.fetchone()
 
-    strategy = db.execute(
-        """
-        SELECT s.*, q.title AS quest_title
-        FROM strategies s
-        JOIN quests q ON q.id = s.quest_id
-        WHERE s.id = ?
-        """,
-        (strategy_id,),
-    ).fetchone()
+        if not strategy:
+            flash("Strategy not found.")
+            return redirect(url_for("dashboard"))
 
-    if not strategy:
-        flash("Strategy not found.")
-        return redirect(url_for("dashboard"))
+        if strategy["completed"]:
+            flash("Strategy already completed.")
+            return redirect(url_for("dashboard"))
 
-    if strategy["completed"]:
-        flash("Strategy already completed.")
-        return redirect(url_for("dashboard"))
-
-    db.execute(
-        "UPDATE strategies SET completed = 1 WHERE id = ?",
-        (strategy_id,),
-    )
+        cur.execute(
+            "UPDATE strategies SET completed = 1 WHERE id = %s",
+            (strategy_id,),
+        )
     db.commit()
-    backup_db()
 
     leveled, level, unlocked_outfits = add_xp(10)
 
@@ -760,33 +760,30 @@ def add_idea():
         return redirect(url_for("dashboard"))
 
     db = get_db()
-    db.execute(
-        "INSERT INTO idea_vault (text, created_at) VALUES (?, ?)",
-        (text, datetime.utcnow().isoformat()),
-    )
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO idea_vault (text, created_at) VALUES (%s, %s)",
+            (text, utc_now_iso()),
+        )
     db.commit()
-    backup_db()
 
-    flash("Idea added to the vault. NEW VERSION")
+    flash("Idea added to the vault.")
     return redirect(url_for("dashboard"))
 
 
 @app.post("/ideas/<int:idea_id>/delete")
 def delete_idea(idea_id):
     db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM idea_vault WHERE id = %s", (idea_id,))
+        idea = cur.fetchone()
 
-    idea = db.execute(
-        "SELECT * FROM idea_vault WHERE id = ?",
-        (idea_id,),
-    ).fetchone()
+        if not idea:
+            flash("Idea not found.")
+            return redirect(url_for("dashboard"))
 
-    if not idea:
-        flash("Idea not found.")
-        return redirect(url_for("dashboard"))
-
-    db.execute("DELETE FROM idea_vault WHERE id = ?", (idea_id,))
+        cur.execute("DELETE FROM idea_vault WHERE id = %s", (idea_id,))
     db.commit()
-    backup_db()
 
     flash("Idea deleted.")
     return redirect(url_for("dashboard"))
@@ -802,28 +799,29 @@ def update_health():
     reflection_text = request.form.get("reflection_text", "").strip()
 
     db = get_db()
-    before = db.execute("SELECT * FROM daily_log WHERE id = 1").fetchone()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM daily_log WHERE id = 1")
+        before = cur.fetchone()
 
-    xp_gain = 0
-    if protein_goal > 0 and protein_value >= protein_goal and before["protein_value"] < before["protein_goal"]:
-        xp_gain += 20
-    if water_goal > 0 and water_value >= water_goal and before["water_value"] < before["water_goal"]:
-        xp_gain += 10
-    if workout_done and not before["workout_done"]:
-        xp_gain += 30
-    if reflection_text and not before["reflection_text"]:
-        xp_gain += 15
+        xp_gain = 0
+        if protein_goal > 0 and protein_value >= protein_goal and before["protein_value"] < before["protein_goal"]:
+            xp_gain += 20
+        if water_goal > 0 and water_value >= water_goal and before["water_value"] < before["water_goal"]:
+            xp_gain += 10
+        if workout_done and not before["workout_done"]:
+            xp_gain += 30
+        if reflection_text and not before["reflection_text"]:
+            xp_gain += 15
 
-    db.execute(
-        """
-        UPDATE daily_log
-        SET protein_goal = ?, protein_value = ?, water_goal = ?, water_value = ?, workout_done = ?, reflection_text = ?
-        WHERE id = 1
-        """,
-        (protein_goal, protein_value, water_goal, water_value, workout_done, reflection_text),
-    )
+        cur.execute(
+            """
+            UPDATE daily_log
+            SET protein_goal = %s, protein_value = %s, water_goal = %s, water_value = %s, workout_done = %s, reflection_text = %s
+            WHERE id = 1
+            """,
+            (protein_goal, protein_value, water_goal, water_value, workout_done, reflection_text),
+        )
     db.commit()
-    backup_db()
 
     leveled, level, unlocked_outfits = add_xp(xp_gain)
 
@@ -840,11 +838,12 @@ def update_health():
 @app.post("/reset-day")
 def reset_day():
     db = get_db()
-    db.execute(
-        "UPDATE daily_log SET protein_value = 0, water_value = 0, workout_done = 0, reflection_text = '' WHERE id = 1"
-    )
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE daily_log SET protein_value = 0, water_value = 0, workout_done = 0, reflection_text = '' WHERE id = 1"
+        )
     db.commit()
-    backup_db()
+
     flash("Daily health and reflection fields reset.")
     return redirect(url_for("dashboard"))
 
