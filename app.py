@@ -7,16 +7,23 @@ from pathlib import Path
 
 from flask import Flask, flash, g, redirect, render_template, request, url_for
 
+
+# Use persistent disk if available on your host, otherwise fall back to the app folder
+try:
+    BASE_DIR = Path("/data")
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    BASE_DIR = Path(__file__).resolve().parent
+
+DB_PATH = BASE_DIR / "lifequest.db"
+
+
 def backup_db():
-    backup_path = DB_PATH.parent / "lifequest_backup.db"
+    backup_path = BASE_DIR / "lifequest_backup.db"
     with sqlite3.connect(DB_PATH) as source:
         with sqlite3.connect(backup_path) as dest:
             source.backup(dest)
 
-BASE_DIR = Path("/data")
-BASE_DIR.mkdir(parents=True, exist_ok=True)
-
-DB_PATH = BASE_DIR / "lifequest.db"
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "dev-secret-change-me"
@@ -219,6 +226,8 @@ def init_db():
     with app.app_context():
         unlock_outfits_for_level()
 
+    backup_db()
+
 
 def unlock_outfits_for_level():
     db = get_db()
@@ -267,6 +276,7 @@ def unlock_outfits_for_level():
             )
 
     db.commit()
+    backup_db()
     return unlocked_names
 
 
@@ -319,7 +329,6 @@ def add_xp(amount):
         (level, xp, amount),
     )
     db.commit()
-
     backup_db()
 
     unlocked_outfits = []
@@ -367,6 +376,7 @@ def apply_daily_streak():
         (new_streak, today_str),
     )
     db.commit()
+    backup_db()
 
     return streak_bonus, new_streak, True
 
@@ -507,6 +517,7 @@ def set_energy():
     db = get_db()
     db.execute("UPDATE profile_settings SET energy_mode = ? WHERE id = 1", (energy_mode,))
     db.commit()
+    backup_db()
     flash(f"Energy mode set to {energy_mode}.")
     return redirect(url_for("dashboard"))
 
@@ -526,6 +537,7 @@ def add_quest_to_today(quest_id):
 
     db.execute("UPDATE quests SET is_today = 1 WHERE id = ?", (quest_id,))
     db.commit()
+    backup_db()
     flash(f"Added to Today Focus: {quest['title']}.")
     return redirect(url_for("dashboard"))
 
@@ -541,6 +553,7 @@ def remove_quest_from_today(quest_id):
 
     db.execute("UPDATE quests SET is_today = 0 WHERE id = ?", (quest_id,))
     db.commit()
+    backup_db()
     flash(f"Removed from Today Focus: {quest['title']}.")
     return redirect(url_for("dashboard"))
 
@@ -568,7 +581,7 @@ def equip_outfit(outfit_id):
         (outfit_id,),
     )
     db.commit()
-
+    backup_db()
     flash(f"Equipped outfit: {owned['name']}.")
     return redirect(url_for("dashboard"))
 
@@ -606,6 +619,7 @@ def add_quest():
             (quest_id, line),
         )
     db.commit()
+    backup_db()
 
     strategy_xp = len(strategy_lines) * 10
     leveled, level, unlocked_outfits = add_xp(strategy_xp)
@@ -639,6 +653,7 @@ def complete_quest(quest_id):
         (datetime.utcnow().isoformat(), quest_id),
     )
     db.commit()
+    backup_db()
 
     streak_bonus, new_streak, streak_updated = apply_daily_streak()
     base_leveled, base_level, base_outfits = add_xp(total_gain)
@@ -690,6 +705,7 @@ def delete_quest(quest_id):
     db.execute("DELETE FROM strategies WHERE quest_id = ?", (quest_id,))
     db.execute("DELETE FROM quests WHERE id = ?", (quest_id,))
     db.commit()
+    backup_db()
 
     flash(f"Deleted quest: {quest['title']}.")
     return redirect(url_for("dashboard"))
@@ -722,6 +738,7 @@ def complete_strategy(strategy_id):
         (strategy_id,),
     )
     db.commit()
+    backup_db()
 
     leveled, level, unlocked_outfits = add_xp(10)
 
@@ -748,6 +765,7 @@ def add_idea():
         (text, datetime.utcnow().isoformat()),
     )
     db.commit()
+    backup_db()
 
     flash("Idea added to the vault.")
     return redirect(url_for("dashboard"))
@@ -768,6 +786,7 @@ def delete_idea(idea_id):
 
     db.execute("DELETE FROM idea_vault WHERE id = ?", (idea_id,))
     db.commit()
+    backup_db()
 
     flash("Idea deleted.")
     return redirect(url_for("dashboard"))
@@ -804,6 +823,7 @@ def update_health():
         (protein_goal, protein_value, water_goal, water_value, workout_done, reflection_text),
     )
     db.commit()
+    backup_db()
 
     leveled, level, unlocked_outfits = add_xp(xp_gain)
 
@@ -824,6 +844,7 @@ def reset_day():
         "UPDATE daily_log SET protein_value = 0, water_value = 0, workout_done = 0, reflection_text = '' WHERE id = 1"
     )
     db.commit()
+    backup_db()
     flash("Daily health and reflection fields reset.")
     return redirect(url_for("dashboard"))
 
