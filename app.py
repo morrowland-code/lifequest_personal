@@ -7,7 +7,15 @@ from pathlib import Path
 
 from flask import Flask, flash, g, redirect, render_template, request, url_for
 
-BASE_DIR = Path(__file__).resolve().parent
+def backup_db():
+    backup_path = DB_PATH.parent / "lifequest_backup.db"
+    with sqlite3.connect(DB_PATH) as source:
+        with sqlite3.connect(backup_path) as dest:
+            source.backup(dest)
+
+BASE_DIR = Path("/data")
+BASE_DIR.mkdir(parents=True, exist_ok=True)
+
 DB_PATH = BASE_DIR / "lifequest.db"
 
 app = Flask(__name__)
@@ -311,6 +319,8 @@ def add_xp(amount):
         (level, xp, amount),
     )
     db.commit()
+
+    backup_db()
 
     unlocked_outfits = []
     if level > old_level:
