@@ -16,9 +16,7 @@
       --shadow: rgba(255,95,178,.14);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -76,14 +74,6 @@
       padding: 12px;
       margin-bottom: 10px;
       background: #fffafd;
-      position: relative;
-      z-index: 1;
-      overflow: visible;
-      pointer-events: auto;
-    }
-
-    .quest * {
-      pointer-events: auto;
     }
 
     button {
@@ -94,7 +84,6 @@
       padding: 10px 14px;
       cursor: pointer;
       font-weight: 700;
-      pointer-events: auto;
     }
 
     button:hover {
@@ -141,14 +130,6 @@
       font-size: 14px;
     }
 
-    .flash {
-      padding: 12px 14px;
-      background: #fff0f9;
-      border: 2px solid var(--border);
-      border-radius: 14px;
-      margin-bottom: 12px;
-    }
-
     .xp {
       font-size: 28px;
       font-weight: 800;
@@ -171,39 +152,47 @@
       align-items: center;
     }
 
-    .actions-inline form {
-      margin: 0;
+    .hidden {
+      display: none !important;
     }
 
-    details {
-      width: 100%;
-      display: block;
-      overflow: visible;
+    .flash-local {
+      padding: 12px 14px;
+      background: #fff0f9;
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 12px;
     }
 
-    summary {
+    .progress-bar {
+      height: 14px;
+      background: #ffd8ee;
+      border: 2px solid #f5b2d5;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff5fb2, #ff93c9);
+    }
+
+    .strategy-row {
+      margin-top: 6px;
+      padding-left: 12px;
+      border-left: 3px solid #ffd8ee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .clickable-toggle {
       cursor: pointer;
-      list-style: none;
-      display: block;
-      pointer-events: auto;
-      user-select: none;
-    }
-
-    summary::-webkit-details-marker {
-      display: none;
-    }
-
-    form {
-      pointer-events: auto;
-    }
-
-    a {
-      color: var(--pink);
     }
 
     @media (max-width: 900px) {
-      .grid-2,
-      .row {
+      .grid-2, .row {
         grid-template-columns: 1fr;
       }
     }
@@ -211,14 +200,7 @@
 </head>
 <body>
   <div class="wrap">
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        {% for message in messages %}
-          <div class="flash">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
+    <div id="flash-container"></div>
     {% block content %}{% endblock %}
   </div>
 </body>
