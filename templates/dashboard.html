@@ -9,22 +9,20 @@
           <div class="muted">Planner + motivation game loop.</div>
         </div>
         <div class="xp">
-          Level {{ settings.level }}<br>
-          {{ settings.current_xp }} / {{ settings.level * 100 }} XP
+          <div id="level-text">Level 1</div>
+          <div id="xp-text">0 / 100 XP</div>
           <div style="margin-top:8px; width:220px; max-width:100%;">
-            <div style="height:14px; background:#ffd8ee; border:2px solid #f5b2d5; border-radius:999px; overflow:hidden;">
-              <div style="height:100%; width:{% if settings.level * 100 > 0 %}{{ (settings.current_xp / (settings.level * 100) * 100)|round(1) }}{% else %}0{% endif %}%; background:linear-gradient(90deg, #ff5fb2, #ff93c9);"></div>
+            <div class="progress-bar">
+              <div id="xp-fill" class="progress-fill" style="width:0%;"></div>
             </div>
           </div>
-          <div class="muted" style="margin-top:6px;">Total XP: {{ settings.total_xp }}</div>
+          <div class="muted" style="margin-top:6px;" id="total-xp-text">Total XP: 0</div>
         </div>
       </div>
 
       <div style="margin-bottom:10px;">
-        <span class="pill">🔥 Daily Streak: {{ settings.daily_streak }} day{% if settings.daily_streak != 1 %}s{% endif %}</span>
-        {% if settings.last_activity_date %}
-          <span class="pill">Last Activity: {{ settings.last_activity_date }}</span>
-        {% endif %}
+        <span class="pill" id="streak-pill">🔥 Daily Streak: 0 days</span>
+        <span class="pill" id="last-activity-pill">Last Activity: none</span>
       </div>
 
       <div style="margin-bottom:10px;">
@@ -39,11 +37,11 @@
       <div class="row" style="margin-top:12px;">
         <div class="quest" style="margin-bottom:0;">
           <strong>Protein</strong>
-          <div class="muted" style="margin-top:6px;">{{ daily_log.protein_value }} / {{ daily_log.protein_goal }}</div>
+          <div class="muted" style="margin-top:6px;" id="protein-summary">0 / 120</div>
         </div>
         <div class="quest" style="margin-bottom:0;">
           <strong>Water</strong>
-          <div class="muted" style="margin-top:6px;">{{ daily_log.water_value }} / {{ daily_log.water_goal }}</div>
+          <div class="muted" style="margin-top:6px;" id="water-summary">0 / 8</div>
         </div>
       </div>
     </div>
@@ -51,69 +49,9 @@
     <div class="card">
       <div class="section-title">
         <h2>Today Focus</h2>
-        <span class="pill">{{ today_quests|length }} selected</span>
+        <span class="pill" id="today-count-pill">0 selected</span>
       </div>
-
-      {% if today_quests %}
-        {% for quest in today_quests %}
-          <div class="quest" style="background:#fff7fc;">
-            <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-              <strong>{{ quest.title }}</strong>
-              <span class="pill">{{ quest.xp_reward }} XP</span>
-            </div>
-
-            <div class="muted" style="margin-top:6px;">
-              {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }}
-            </div>
-
-            {% for strategy in strategies if strategy.quest_id == quest.id %}
-              <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-                  <span>
-                    {% if strategy.completed %}
-                      ✔ {{ strategy.text }}
-                    {% else %}
-                      ☐ {{ strategy.text }}
-                    {% endif %}
-                  </span>
-
-                  {% if not strategy.completed %}
-                    <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
-                      <button type="submit" class="btn-secondary">+10 XP</button>
-                    </form>
-                  {% else %}
-                    <span class="pill">Done</span>
-                  {% endif %}
-                </div>
-              </div>
-            {% endfor %}
-
-            {% if quest.notes %}
-              <div style="margin-top:8px;">{{ quest.notes }}</div>
-            {% endif %}
-
-            <div class="actions-inline">
-              <button
-                type="button"
-                class="btn-secondary"
-                onclick="selectQuest('{{ quest.id }}', {{ quest.title|tojson }})"
-              >
-                Focus Now
-              </button>
-
-              <form action="{{ url_for('remove_quest_from_today', quest_id=quest.id) }}" method="post">
-                <button type="submit" class="btn-secondary">Remove from Today</button>
-              </form>
-
-              <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
-                <button type="submit">Complete Quest</button>
-              </form>
-            </div>
-          </div>
-        {% endfor %}
-      {% else %}
-        <div class="muted">No quests in Today Focus yet. Add a few from the quest board below.</div>
-      {% endif %}
+      <div id="today-focus-list"></div>
     </div>
 
     <div class="card">
@@ -141,22 +79,22 @@
       </div>
 
       <div class="muted" style="margin-top:10px;">
-        Pick any quest from Today Focus or the quest board, then start a timer for that mission.
+        Pick any quest, then start a timer for that mission.
       </div>
     </div>
 
     <div class="card">
       <div class="section-title">
         <h2>Daily Quest Board</h2>
-        <span class="pill">Energy: {{ settings.energy_mode }}</span>
+        <span class="pill" id="energy-pill">Energy: normal</span>
       </div>
 
-      <form action="{{ url_for('set_energy') }}" method="post" class="row" style="margin-bottom:14px;">
+      <form id="energy-form" class="row" style="margin-bottom:14px;">
         <div>
           <label>Energy Mode</label>
-          <select name="energy_mode">
+          <select id="energy_mode">
             {% for mode in energy_presets.keys() %}
-              <option value="{{ mode }}" {% if mode == settings.energy_mode %}selected{% endif %}>{{ mode|capitalize }}</option>
+              <option value="{{ mode }}">{{ mode|capitalize }}</option>
             {% endfor %}
           </select>
         </div>
@@ -165,110 +103,33 @@
         </div>
       </form>
 
-      {% for category, quests in quest_board.items() %}
-        <h3 style="margin-top:10px;">{{ category|capitalize }} Quest{% if quests|length != 1 %}s{% endif %}</h3>
-        {% if quests %}
-          {% for quest in quests %}
-            <div class="quest">
-              <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-                <strong>{{ quest.title }}</strong>
-                <span class="pill">{{ quest.xp_reward }} XP</span>
-              </div>
-
-              <div class="muted" style="margin-top:6px;">
-                {{ quest.campaign_name or 'No campaign' }} · {{ quest.strategy_count }} strategies
-                {% if quest.is_today %}
-                  · In Today Focus ✨
-                {% endif %}
-              </div>
-
-              {% for strategy in strategies if strategy.quest_id == quest.id %}
-                <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-                    <span>
-                      {% if strategy.completed %}
-                        ✔ {{ strategy.text }}
-                      {% else %}
-                        ☐ {{ strategy.text }}
-                      {% endif %}
-                    </span>
-
-                    {% if not strategy.completed %}
-                      <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
-                        <button type="submit" class="btn-secondary">+10 XP</button>
-                      </form>
-                    {% else %}
-                      <span class="pill">Done</span>
-                    {% endif %}
-                  </div>
-                </div>
-              {% endfor %}
-
-              {% if quest.notes %}
-                <div style="margin-top:8px;">{{ quest.notes }}</div>
-              {% endif %}
-
-              <div class="actions-inline">
-                <button
-                  type="button"
-                  class="btn-secondary"
-                  onclick="selectQuest('{{ quest.id }}', {{ quest.title|tojson }})"
-                >
-                  Focus This Quest
-                </button>
-
-                {% if quest.is_today %}
-                  <form action="{{ url_for('remove_quest_from_today', quest_id=quest.id) }}" method="post">
-                    <button type="submit" class="btn-secondary">Remove from Today</button>
-                  </form>
-                {% else %}
-                  <form action="{{ url_for('add_quest_to_today', quest_id=quest.id) }}" method="post">
-                    <button type="submit" class="btn-secondary">Add to Today</button>
-                  </form>
-                {% endif %}
-
-                <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
-                  <button type="submit">Complete Quest</button>
-                </form>
-
-                <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
-                  <button type="submit" class="btn-danger">Delete</button>
-                </form>
-              </div>
-            </div>
-          {% endfor %}
-        {% else %}
-          <div class="muted">No {{ category }} quests showing in this energy mode.</div>
-        {% endif %}
-      {% endfor %}
+      <div id="quest-board"></div>
     </div>
 
     <div class="card">
       <h2>Add Quest</h2>
-      <form action="{{ url_for('add_quest') }}" method="post" class="grid">
+      <form id="add-quest-form" class="grid">
         <div>
           <label>Quest title</label>
-          <input name="title" placeholder="Study derivatives for 25 minutes">
+          <input id="quest-title" placeholder="Study derivatives for 25 minutes">
         </div>
 
         <div class="row">
           <div>
             <label>Campaign</label>
-            <select name="campaign_id">
+            <select id="quest-campaign">
               <option value="">No campaign</option>
-              {% for campaign in campaigns %}
-                <option value="{{ campaign.id }}">{{ campaign.name }}</option>
+              {% for campaign in campaign_options %}
+                <option value="{{ campaign }}">{{ campaign }}</option>
               {% endfor %}
             </select>
           </div>
           <div>
             <label>Category</label>
-            <select name="category">
-              <option value="main">Main</option>
-              <option value="side">Side</option>
-              <option value="stability">Stability</option>
-              <option value="reflection">Reflection</option>
-              <option value="tiny">Tiny</option>
+            <select id="quest-category">
+              {% for category in category_options %}
+                <option value="{{ category }}">{{ category|capitalize }}</option>
+              {% endfor %}
             </select>
           </div>
         </div>
@@ -276,17 +137,17 @@
         <div class="row">
           <div>
             <label>XP reward</label>
-            <input name="xp_reward" type="number" value="25">
+            <input id="quest-xp" type="number" value="25">
           </div>
           <div>
             <label>Notes</label>
-            <input name="notes" placeholder="One clear next step only">
+            <input id="quest-notes" placeholder="One clear next step only">
           </div>
         </div>
 
         <div>
           <label>Strategies (one per line, each gives 10 XP)</label>
-          <textarea name="strategies" placeholder="Watch one short lecture&#10;Solve 3 problems&#10;Explain it out loud"></textarea>
+          <textarea id="quest-strategies" placeholder="Watch one short lecture&#10;Solve 3 problems&#10;Explain it out loud"></textarea>
         </div>
 
         <button type="submit">Add Quest</button>
@@ -303,43 +164,15 @@
 
       <div class="quest" style="background:#fff7fc;">
         <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-          <strong>{{ character.character_name }}</strong>
-          {% if current_outfit %}
-            <span class="pill">{{ current_outfit.rarity|capitalize }}</span>
-          {% endif %}
+          <strong id="character-name">Terrabeacon Hero</strong>
+          <span class="pill" id="current-outfit-rarity">Common</span>
         </div>
-        <div class="muted" style="margin-top:8px;">
-          Current outfit:
-          {% if current_outfit %}
-            {{ current_outfit.name }}
-          {% else %}
-            None equipped yet
-          {% endif %}
+        <div class="muted" style="margin-top:8px;" id="current-outfit-name">
+          Current outfit: Pink Starter Fit
         </div>
       </div>
 
-      {% for outfit in owned_outfits %}
-        <div class="quest">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-            <strong>{{ outfit.name }}</strong>
-            <span class="pill">{{ outfit.rarity|capitalize }}</span>
-          </div>
-
-          <div class="muted" style="margin-top:6px;">
-            Slot: {{ outfit.slot }} · Unlock level: {{ outfit.unlock_level }}
-          </div>
-
-          {% if current_outfit and outfit.id == current_outfit.id %}
-            <div class="muted" style="margin-top:8px;">Currently equipped ✨</div>
-          {% else %}
-            <form action="{{ url_for('equip_outfit', outfit_id=outfit.id) }}" method="post" style="margin-top:10px;">
-              <button type="submit">Equip Outfit</button>
-            </form>
-          {% endif %}
-        </div>
-      {% else %}
-        <div class="muted">No outfits unlocked yet.</div>
-      {% endfor %}
+      <div id="outfit-list"></div>
     </div>
 
     <div class="card">
@@ -347,228 +180,99 @@
         <h2>Campaign Progress</h2>
         <span class="pill">Quest Paths</span>
       </div>
-
-      {% for campaign in campaign_progress %}
-        <div class="quest">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-            <strong>{{ campaign.name }}</strong>
-            <span class="pill">{{ campaign.completed_quests }}/{{ campaign.total_quests }} done</span>
-          </div>
-
-          <div style="margin-top:10px;">
-            <div style="height:14px; background:#ffd8ee; border:2px solid #f5b2d5; border-radius:999px; overflow:hidden;">
-              <div style="height:100%; width:{{ campaign.percent }}%; background:linear-gradient(90deg, #ff5fb2, #ff93c9);"></div>
-            </div>
-          </div>
-
-          <div class="muted" style="margin-top:8px;">{{ campaign.percent }}% complete</div>
-        </div>
-      {% else %}
-        <div class="muted">No campaigns found yet.</div>
-      {% endfor %}
+      <div id="campaign-progress-list"></div>
     </div>
 
     <div class="card">
       <h2>Health + Reflection</h2>
-      <form action="{{ url_for('update_health') }}" method="post" class="grid">
+      <form id="health-form" class="grid">
         <div class="row">
           <div>
             <label>Protein</label>
-            <input name="protein_value" type="number" value="{{ daily_log.protein_value }}">
+            <input id="protein_value" type="number" value="0">
           </div>
           <div>
             <label>Protein goal</label>
-            <input name="protein_goal" type="number" value="{{ daily_log.protein_goal }}">
+            <input id="protein_goal" type="number" value="120">
           </div>
         </div>
 
         <div class="row">
           <div>
             <label>Water</label>
-            <input name="water_value" type="number" value="{{ daily_log.water_value }}">
+            <input id="water_value" type="number" value="0">
           </div>
           <div>
             <label>Water goal</label>
-            <input name="water_goal" type="number" value="{{ daily_log.water_goal }}">
+            <input id="water_goal" type="number" value="8">
           </div>
         </div>
 
         <div>
           <label>
-            <input type="checkbox" name="workout_done" {% if daily_log.workout_done %}checked{% endif %} style="width:auto;">
+            <input id="workout_done" type="checkbox" style="width:auto;">
             Workout done
           </label>
         </div>
 
         <div>
           <label>Reflection</label>
-          <textarea name="reflection_text" placeholder="What emotion showed up today? What small action moves you forward?">{{ daily_log.reflection_text }}</textarea>
+          <textarea id="reflection_text" placeholder="What emotion showed up today? What small action moves you forward?"></textarea>
         </div>
 
         <button type="submit">Save Health + Reflection</button>
       </form>
 
-      <form action="{{ url_for('reset_day') }}" method="post" style="margin-top:10px;">
-        <button type="submit" class="btn-secondary">Reset Daily Fields</button>
-      </form>
+      <button type="button" id="reset-day-btn" class="btn-secondary" style="margin-top:10px;">Reset Daily Fields</button>
     </div>
 
     <div class="card">
       <h2>Idea Vault</h2>
-      <form action="{{ url_for('add_idea') }}" method="post" class="grid">
+      <form id="idea-form" class="grid">
         <div>
           <label>Chaotic thought dump</label>
-          <textarea name="text" placeholder="Build website automation for TikTok math videos"></textarea>
+          <textarea id="idea-text" placeholder="Build website automation for TikTok math videos"></textarea>
         </div>
         <button type="submit">Save Idea</button>
       </form>
 
-      <div style="margin-top:14px;">
-        {% for idea in ideas %}
-          <div class="quest">
-            <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
-              <span>{{ idea.text }}</span>
-              <form action="{{ url_for('delete_idea', idea_id=idea.id) }}" method="post">
-                <button type="submit" class="btn-danger">Delete</button>
-              </form>
-            </div>
-          </div>
-        {% else %}
-          <div class="muted">No ideas saved yet.</div>
-        {% endfor %}
-      </div>
+      <div style="margin-top:14px;" id="idea-list"></div>
     </div>
+
+    
+    <div class="card">
+        <h2>Save Data</h2>
+
+        <div class="actions-inline">
+            <button type="button" onclick="exportLifeQuestSave()">Download Save</button>
+
+            <label class="btn-secondary" style="cursor:pointer;">
+            Import Save
+            <input type="file" style="display:none;" onchange="importLifeQuestSave(this.files[0])">
+            </label>
+
+            <button type="button" class="btn-danger" onclick="resetLifeQuestSave()">Reset All Data</button>
+        </div>
+
+        <div class="muted" style="margin-top:10px;">
+            Your progress is stored in your browser. Download a backup to keep it safe.
+        </div>
+    </div>
+
 
     <div class="card">
       <h2>Completed Quests</h2>
-      {% for quest in completed_quests %}
-        <div class="quest">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-            <strong>{{ quest.title }}</strong>
-            <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
-              <button type="submit" class="btn-danger">Delete</button>
-            </form>
-          </div>
-          <div class="muted">
-            {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
-          </div>
-          {% if quest.notes %}
-            <div style="margin-top:6px;">{{ quest.notes }}</div>
-          {% endif %}
-        </div>
-      {% else %}
-        <div class="muted">No completed quests yet.</div>
-      {% endfor %}
+      <div id="completed-quests-list"></div>
     </div>
 
     <div class="card">
       <h2>All Active Quests</h2>
-      {% for quest in active_quests %}
-        <div class="quest">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap;">
-            <div>
-              <strong>{{ quest.title }}</strong>
-              <div class="muted" style="margin-top:4px;">
-                {{ quest.campaign_name or 'No campaign' }} · {{ quest.category }} · {{ quest.xp_reward }} XP
-                {% if quest.is_today %}
-                  · In Today Focus ✨
-                {% endif %}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              class="btn-secondary"
-              onclick="toggleQuestPanel('quest-panel-{{ quest.id }}', this)"
-            >
-              Show Strategies
-            </button>
-          </div>
-
-          <div id="quest-panel-{{ quest.id }}" style="display:none; margin-top:12px;">
-            {% if quest.notes %}
-              <div style="margin-top:8px;">{{ quest.notes }}</div>
-            {% endif %}
-
-            {% set quest_strategies = strategies | selectattr('quest_id', 'equalto', quest.id) | list %}
-            {% if quest_strategies %}
-              <div style="margin-top:10px;" class="muted">Strategies:</div>
-
-              {% for strategy in quest_strategies %}
-                <div style="margin-top:6px; padding-left:12px; border-left:3px solid #ffd8ee;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-                    <span>
-                      {% if strategy.completed %}
-                        ✔ {{ strategy.text }}
-                      {% else %}
-                        ☐ {{ strategy.text }}
-                      {% endif %}
-                    </span>
-
-                    {% if not strategy.completed %}
-                      <form action="{{ url_for('complete_strategy', strategy_id=strategy.id) }}" method="post">
-                        <button type="submit" class="btn-secondary">+10 XP</button>
-                      </form>
-                    {% else %}
-                      <span class="pill">Done</span>
-                    {% endif %}
-                  </div>
-                </div>
-              {% endfor %}
-            {% else %}
-              <div class="muted" style="margin-top:10px;">No strategies added yet.</div>
-            {% endif %}
-
-            <div class="actions-inline" style="margin-top:12px;">
-              <button
-                type="button"
-                class="btn-secondary"
-                onclick="selectQuest('{{ quest.id }}', {{ quest.title|tojson }})"
-              >
-                Focus This Quest
-              </button>
-
-              {% if quest.is_today %}
-                <form action="{{ url_for('remove_quest_from_today', quest_id=quest.id) }}" method="post">
-                  <button type="submit" class="btn-secondary">Remove from Today</button>
-                </form>
-              {% else %}
-                <form action="{{ url_for('add_quest_to_today', quest_id=quest.id) }}" method="post">
-                  <button type="submit" class="btn-secondary">Add to Today</button>
-                </form>
-              {% endif %}
-
-              <form action="{{ url_for('complete_quest', quest_id=quest.id) }}" method="post">
-                <button type="submit">Complete Quest</button>
-              </form>
-
-              <form action="{{ url_for('delete_quest', quest_id=quest.id) }}" method="post">
-                <button type="submit" class="btn-danger">Delete</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      {% else %}
-        <div class="muted">No active quests yet.</div>
-      {% endfor %}
+      <div id="active-quests-list"></div>
     </div>
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='local-data.js') }}"></script>
+<script src="{{ url_for('static', filename='lifequest.js') }}"></script>
 <script src="{{ url_for('static', filename='timer.js') }}"></script>
-
-<script>
-function toggleQuestPanel(panelId, button) {
-  const panel = document.getElementById(panelId);
-  if (!panel) return;
-
-  if (panel.style.display === "none" || panel.style.display === "") {
-    panel.style.display = "block";
-    if (button) button.innerText = "Hide Strategies";
-  } else {
-    panel.style.display = "none";
-    if (button) button.innerText = "Show Strategies";
-  }
-}
-</script>
 {% endblock %}
