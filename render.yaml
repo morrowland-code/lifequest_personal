@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: lifequest
+    runtime: python
+    buildCommand: ""
+    startCommand: python app.py
